@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: goalpulse-api
+    env: node
+    rootDir: goalpulse-api
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    plan: starter

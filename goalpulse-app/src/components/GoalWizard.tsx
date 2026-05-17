@@ -1,0 +1,213 @@
+// GoalWizard.tsx — Create/Edit goal with AI coach
+import React, { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { Sparkles, X } from 'lucide-react';
+import api from '../lib/api';
+import { UOM_TYPES, normalizeUomType, uomPlaceholder } from '../lib/uom';
+
+const THRUST_AREAS = ['Revenue Growth', 'Customer Satisfaction', 'Operational Efficiency', 'People Development', 'Innovation', 'Compliance & Risk'];
+
+interface Props {
+  onClose: () => void;
+  onSave: () => void;
+  remainingWeightage: number;
+  editGoal?: any;
+}
+
+export default function GoalWizard({ onClose, onSave, remainingWeightage, editGoal }: Props) {
+  const [form, setForm] = useState({
+    title: editGoal?.title || '',
+    uom_type: normalizeUomType(editGoal?.uom_type),
+    target_value: editGoal?.target_value || '',
+    weightage: editGoal?.weightage || '',
+    thrust_area: editGoal?.thrust_area || 'Revenue Growth',
+    description: editGoal?.description || '',
+  });
+  const [aiScorecard, setAiScorecard] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [error, setError] = useState('');
+  const availableWeightage = Math.max(0, remainingWeightage);
+  const weightageMax = availableWeightage >= 10 ? availableWeightage : undefined;
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      if (editGoal) {
+        return api.patch(`/api/goals/${editGoal.id}`, { ...form, uom_type: normalizeUomType(form.uom_type), weightage: Number(form.weightage) });
+      }
+      return api.post('/api/goals', { ...form, uom_type: normalizeUomType(form.uom_type), weightage: Number(form.weightage) });
+    },
+    onSuccess: () => onSave(),
+    onError: (err: any) => setError(err.response?.data?.error || 'Failed to save goal'),
+  });
+
+  // Debounced AI SMART coach
+  React.useEffect(() => {
+    if (!form.title.trim()) {
+      setAiScorecard(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setAiLoading(true);
+      try {
+        const res = await api.post('/api/ai/coach', form);
+        setAiScorecard(res.data);
+      } catch { /* ignore */ }
+      setAiLoading(false);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [form.title, form.description, form.uom_type, form.target_value]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (!form.title.trim()) return setError('Goal title is required');
+    if (!form.target_value.trim()) return setError('Target value is required');
+    const w = Number(form.weightage);
+    if (!w || w < 10 || w > 100) return setError('Weightage must be between 10 and 100');
+    if (!editGoal && availableWeightage < 10) return setError('Not enough remaining weightage to add a valid goal. Reduce another goal first.');
+    if (!editGoal && w > availableWeightage) return setError(`Max remaining weightage is ${availableWeightage}%`);
+    saveMutation.mutate();
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 14px', background: '#fff', border: '1px solid #d1d5db',
+    borderRadius: '8px', fontFamily: "'Inter', system-ui, sans-serif", fontSize: '14px', color: '#111827', outline: 'none',
+  };
+  const labelStyle: React.CSSProperties = {
+    display: 'block', fontSize: '13px', fontWeight: '600', color: '#374151', marginBottom: '6px', fontFamily: "'Inter', system-ui, sans-serif",
+  };
+
+  const renderSmartScore = (label: string, data: any) => {
+    if (!data) return null;
+    const color = data.score >= 7 ? '#16a34a' : data.score >= 4 ? '#f59e0b' : '#ef4444';
+    return (
+      <div style={{ marginBottom: '10px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '600', marginBottom: '4px', color: '#374151' }}>
+          <span>{label}</span>
+          <span style={{ color }}>{data.score}/10</span>
+        </div>
+        <div style={{ height: '4px', background: '#e5e7eb', borderRadius: '2px', overflow: 'hidden', marginBottom: '4px' }}>
+          <div style={{ height: '100%', width: `${data.score * 10}%`, background: color, transition: 'width 0.3s ease' }} />
+        </div>
+        <div style={{ fontSize: '11px', color: '#6b7280', fontStyle: 'italic' }}>{data.suggestion}</div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+      <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px rgba(0,0,0,0.15)' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '24px 28px', borderBottom: '1px solid #f3f4f6' }}>
+          <div>
+            <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '24px', fontWeight: '700', color: '#111827' }}>{editGoal ? 'Edit Goal' : 'New Goal'}</h2>
+            <p style={{ fontSize: '13px', color: '#9ca3af', fontFamily: "'Inter', system-ui, sans-serif", marginTop: '2px' }}>
+              {editGoal ? 'Update goal details' : `Remaining weightage: ${remainingWeightage}%`}
+            </p>
+          </div>
+          <button onClick={onClose} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <X size={16} color="#6b7280" />
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          {/* Main Form */}
+          <div style={{ flex: 3, overflowY: 'auto', padding: '24px 28px', borderRight: '1px solid #f3f4f6' }}>
+            <form onSubmit={handleSubmit}>
+              {/* Title */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={labelStyle}>Goal Title *</label>
+                <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                  placeholder="e.g. Increase Q1 revenue pipeline to $2M"
+                  style={inputStyle} />
+              </div>
+
+              {/* 2-col grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div>
+                  <label style={labelStyle}>Thrust Area *</label>
+                  <select value={form.thrust_area} onChange={e => setForm(f => ({ ...f, thrust_area: e.target.value }))} style={{ ...inputStyle }}>
+                    {THRUST_AREAS.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>UoM Type *</label>
+                  <select value={form.uom_type} onChange={e => setForm(f => ({ ...f, uom_type: normalizeUomType(e.target.value) }))} style={{ ...inputStyle }}>
+                    {UOM_TYPES.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Target Value *</label>
+                  <input
+                    type={form.uom_type === 'Timeline' ? 'date' : 'number'}
+                    step={form.uom_type === 'Numeric' || form.uom_type === 'Percentage' || form.uom_type === 'Zero' ? 'any' : undefined}
+                    value={form.target_value}
+                    onChange={e => setForm(f => ({ ...f, target_value: e.target.value }))}
+                    placeholder={uomPlaceholder(form.uom_type)}
+                    style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Weightage (%) * &nbsp;<span style={{ color: '#9ca3af', fontWeight: '400' }}>Max: {availableWeightage}%</span></label>
+                  <input type="number" min={10} {...(weightageMax !== undefined ? { max: weightageMax } : {})} value={form.weightage}
+                    onChange={e => setForm(f => ({ ...f, weightage: e.target.value }))} placeholder="e.g. 40" style={inputStyle} />
+                  {weightageMax === undefined && (
+                    <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '6px', fontFamily: "'Inter', system-ui, sans-serif" }}>
+                      {remainingWeightage < 0
+                        ? `This sheet is overallocated by ${Math.abs(remainingWeightage)}%. Reduce other goals first.`
+                        : 'This sheet has less than 10% available weightage. Lower another goal first.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={labelStyle}>Description (optional)</label>
+                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  rows={3} placeholder="Brief description of the goal..."
+                  style={{ ...inputStyle, resize: 'vertical' as const }} />
+              </div>
+
+              {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#dc2626', fontFamily: "'Inter', system-ui, sans-serif" }}>{error}</div>}
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="button" onClick={onClose} style={{ flex: 1, padding: '10px', background: '#f9fafb', border: '1px solid #e8eaed', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: "'Inter', system-ui, sans-serif" }}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={saveMutation.isPending} style={{ flex: 2, padding: '10px', background: '#111827', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#fff', cursor: 'pointer', fontFamily: "'Inter', system-ui, sans-serif" }}>
+                  {saveMutation.isPending ? 'Saving...' : editGoal ? 'Update Goal' : 'Add Goal'}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* AI Scorecard Side Panel */}
+          <div style={{ flex: 2, background: '#fafafa', padding: '24px 28px', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+              <Sparkles size={18} color="#8b5cf6" />
+              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#111827', fontFamily: "'Inter', system-ui, sans-serif" }}>AI SMART Coach</h3>
+            </div>
+            
+            {!form.title ? (
+              <div style={{ fontSize: '13px', color: '#9ca3af', textAlign: 'center', marginTop: '40px' }}>
+                Start typing your goal title to get real-time AI feedback.
+              </div>
+            ) : aiLoading ? (
+              <div style={{ fontSize: '13px', color: '#8b5cf6', textAlign: 'center', marginTop: '40px', fontWeight: '600', animation: 'pulse 1.5s infinite' }}>
+                Analyzing goal quality...
+              </div>
+            ) : aiScorecard ? (
+              <div>
+                {renderSmartScore('S - Specific', aiScorecard.specific)}
+                {renderSmartScore('M - Measurable', aiScorecard.measurable)}
+                {renderSmartScore('A - Achievable', aiScorecard.achievable)}
+                {renderSmartScore('R - Relevant', aiScorecard.relevant)}
+                {renderSmartScore('T - Time-bound', aiScorecard.time_bound)}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

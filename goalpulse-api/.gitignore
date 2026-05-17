@@ -1,0 +1,12 @@
+node_modules
+*.log
+.env
+.env.local
+.env.*.local
+
+goalpulse.db
+goalpulse.db-wal
+goalpulse.db-shm
+
+coverage
+dist
