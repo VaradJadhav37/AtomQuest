@@ -34,6 +34,14 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(express.json());
+app.get('/', (req, res) => {
+  res.json({
+    service: 'GoalPulse API',
+    status: 'ok',
+    health: '/health',
+    debug: '/api/debug/routes',
+  });
+});
 
 // ── Routes ────────────────────────────────────────────────────────────────
 const { router: authRouter } = require('./routes/auth');
