@@ -61,23 +61,29 @@ app.get('/health', (req, res) => {
 });
 
 // ── 404 handler ───────────────────────────────────────────────────────────
-app.get('/api/debug/routes', (req, res) => {
+function collectRoutes(stack, prefix = '') {
   const routes = [];
-  const stack = app._router?.stack || [];
 
-  stack.forEach(layer => {
+  for (const layer of stack || []) {
     if (layer.route?.path) {
       routes.push({
-        path: layer.route.path,
-        methods: Object.keys(layer.route.methods || {}).map(m => m.toUpperCase()),
+        path: `${prefix}${layer.route.path}`,
+        methods: Object.keys(layer.route.methods || {}).map(method => method.toUpperCase()),
       });
-    } else if (layer.name === 'router') {
-      routes.push({
-        path: layer.regexp?.toString?.() || 'router',
-        methods: ['ROUTER'],
-      });
+      continue;
     }
-  });
+
+    if (Array.isArray(layer.handle?.stack) && layer.handle.stack.length > 0) {
+      routes.push(...collectRoutes(layer.handle.stack, prefix));
+    }
+  }
+
+  return routes;
+}
+
+app.get('/api/debug/routes', (req, res) => {
+  const stack = app._router?.stack || app.router?.stack || [];
+  const routes = collectRoutes(stack);
 
   res.json({
     service: 'GoalPulse API',
