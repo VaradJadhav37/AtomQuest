@@ -532,12 +532,6 @@ body,
   transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
 }
 
-.login-card .cl-rootBox,
-.login-card .cl-card,
-.login-card .cl-main {
-  margin-top: 8px;
-}
-
 .login-submit:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 22px 36px rgba(15, 23, 42, 0.2);
@@ -1908,7 +1902,6 @@ body,
     padding: 80px 0;
   }
 }
-
 
 
 

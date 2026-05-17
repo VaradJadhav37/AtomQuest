@@ -53,6 +53,34 @@ app.get('/health', (req, res) => {
 });
 
 // ── 404 handler ───────────────────────────────────────────────────────────
+app.get('/api/debug/routes', (req, res) => {
+  const routes = [];
+  const stack = app._router?.stack || [];
+
+  stack.forEach(layer => {
+    if (layer.route?.path) {
+      routes.push({
+        path: layer.route.path,
+        methods: Object.keys(layer.route.methods || {}).map(m => m.toUpperCase()),
+      });
+    } else if (layer.name === 'router') {
+      routes.push({
+        path: layer.regexp?.toString?.() || 'router',
+        methods: ['ROUTER'],
+      });
+    }
+  });
+
+  res.json({
+    service: 'GoalPulse API',
+    pid: process.pid,
+    node: process.version,
+    env: process.env.NODE_ENV || 'development',
+    routeCount: routes.length,
+    routes,
+  });
+});
+
 app.use((req, res) => res.status(404).json({ error: `${req.method} ${req.path} not found` }));
 
 // ── Error handler ─────────────────────────────────────────────────────────
