@@ -2,8 +2,10 @@
 import axios from 'axios';
 
 const baseURL =
-  import.meta.env.VITE_API_BASE_URL?.trim() ||
-  (import.meta.env.DEV ? 'http://localhost:3001' : '');
+  (import.meta.env.PROD
+    ? import.meta.env.VITE_API_BASE_URL_PROD?.trim() || import.meta.env.VITE_API_BASE_URL?.trim()
+    : import.meta.env.VITE_API_BASE_URL?.trim() || 'http://localhost:3001') ||
+  'http://localhost:3001';
 
 const api = axios.create({
   baseURL,
