@@ -4,7 +4,33 @@ const express = require('express');
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
+
+const allowedOrigins = new Set(
+  String(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean)
+);
+
+[
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  'https://atom-quest-kappa.vercel.app',
+].forEach(origin => allowedOrigins.add(origin));
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.has(origin)) return callback(null, true);
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-goalpulse-email'],
+}));
+app.options('*', cors());
 app.use(express.json());
 
 // ── Routes ────────────────────────────────────────────────────────────────
