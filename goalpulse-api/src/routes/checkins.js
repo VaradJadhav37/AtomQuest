@@ -1,7 +1,7 @@
 const express = require('express');
 const { supabase } = require('../db');
 const { requireAuth } = require('./auth');
-const { cycleWindowStatus, statusLabel, normalizeUomType } = require('../services/goalpulse');
+const { cycleWindowStatus, statusLabel, normalizeUomType, buildScoreExplanation } = require('../services/goalpulse');
 
 const router = express.Router();
 
@@ -120,10 +120,19 @@ router.post('/employee', requireAuth, async (req, res) => {
       action: 'CHECK_IN',
       entity: 'goal',
       entity_id: goal_id,
-      detail: `Employee submitted actuals: ${actual_value}`,
+      detail: JSON.stringify({
+        note: 'Employee submitted actuals',
+        before: null,
+        after: { actual_value: String(actual_value), score, status: normalizedStatus },
+      }),
     });
 
-    res.json({ ok: true, score, status: statusLabel(normalizedStatus) });
+    res.json({
+      ok: true,
+      score,
+      status: statusLabel(normalizedStatus),
+      explanation: buildScoreExplanation(goal, actual_value, score),
+    });
   } catch (err) {
     console.error('POST /checkins/employee:', err);
     res.status(500).json({ error: err.message });
@@ -162,7 +171,10 @@ router.post('/manager', requireAuth, async (req, res) => {
       action: 'MANAGER_COMMENT',
       entity: 'goal',
       entity_id: goal_id,
-      detail: 'Manager comment added',
+      detail: JSON.stringify({
+        note: 'Manager comment added',
+        after: { manager_comment: manager_comment || '', status: normalizedStatus },
+      }),
     });
 
     res.json({ ok: true });

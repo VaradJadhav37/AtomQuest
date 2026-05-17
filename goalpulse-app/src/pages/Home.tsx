@@ -132,7 +132,7 @@ export default function Home() {
       <main>
         <section className="bt-hero bt-container anim-fade-up">
           <div className="bt-hero-content">
-            <h1>Quarterly goals <span>without the spreadsheet chaos</span></h1>
+            <h1>Quarterly goals without the spreadsheet <span>chaos</span></h1>
             <p className="anim-fade-up anim-delay-1">
               GoalPulse helps employees draft goal sheets, managers review them,
               and admins track progress, approvals, and performance in one place.

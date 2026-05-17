@@ -255,6 +255,79 @@ router.post('/search-prompt', requireAuth, async (req, res) => {
   res.json(fallback);
 });
 
+// POST /api/ai/rewrite-goal
+router.post('/rewrite-goal', requireAuth, async (req, res) => {
+  const { title, description, thrust_area, uom_type, target_value } = req.body;
+  const systemPrompt = `You are an executive goal-writing assistant for enterprise OKRs.
+Rewrite the user's rough goal into a crisp, measurable, business-friendly goal.
+Return ONLY valid JSON in this exact structure:
+{
+  "title": "rewritten title",
+  "description": "short supporting description",
+  "rationale": "one sentence explaining the improvement"
+}
+Keep the title concise, measurable, and concrete.`;
+
+  const userContext = `Original goal: ${title || ''}
+Description: ${description || ''}
+Thrust area: ${thrust_area || 'General'}
+Measurement type: ${uom_type || 'Numeric'}
+Target: ${target_value || ''}`;
+
+  const fallback = {
+    title: title || 'Improve business performance',
+    description: description || 'Define a concrete, measurable objective with a clear deadline.',
+    rationale: 'The fallback keeps the goal measurable and business-focused.',
+  };
+
+  const wantsStream = String(req.query.stream || '') === '1' || String(req.headers.accept || '').includes('text/event-stream');
+  const cacheParts = ['rewrite-goal', title, description, thrust_area, uom_type, target_value];
+
+  if (wantsStream) {
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    try {
+      const collected = await groqStreamText({
+        prompt: systemPrompt,
+        userContext,
+        onToken: (token) => {
+          res.write(`data: ${JSON.stringify({ type: 'token', token })}\n\n`);
+        },
+      });
+
+      const parsed = parseJsonBlock(collected, fallback);
+      setCachedValue(cacheKey(cacheParts), parsed, 1000 * 60 * 60 * 6);
+      recordAiMetric({ route: 'rewrite-goal', model: MODEL, cached: false, cost: 0.002 });
+      res.write(`data: ${JSON.stringify({ type: 'done', goal: parsed })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    } catch (err) {
+      const message = JSON.stringify(fallback);
+      for (const token of message.split(/(\s+)/).filter(Boolean)) {
+        res.write(`data: ${JSON.stringify({ type: 'token', token })}\n\n`);
+      }
+      recordAiMetric({ route: 'rewrite-goal', model: MODEL, cached: false, cost: 0 });
+      res.write(`data: ${JSON.stringify({ type: 'done', goal: fallback, fallback: true, error: err.message })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
+  }
+
+  const result = await groqJson({
+    route: 'rewrite-goal',
+    cacheParts,
+    prompt: systemPrompt,
+    userContext,
+    fallback,
+    cost: 0.002,
+    ttlMs: 1000 * 60 * 60 * 6,
+  });
+  res.json(result.data);
+});
+
 function getSmartFallback(title) {
   const hasNumbers = /\d/.test(title);
   const lengthScore = Math.min(title.length > 20 ? 8 : 4, 10);

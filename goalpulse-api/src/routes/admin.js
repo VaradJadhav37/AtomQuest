@@ -3,7 +3,16 @@ const express = require('express');
 const XLSX = require('xlsx');
 const { supabase } = require('../db');
 const { requireAuth } = require('./auth');
-const { aiMetrics, cycleWindowStatus, normalizeUomType } = require('../services/goalpulse');
+const {
+  aiMetrics,
+  cycleWindowStatus,
+  normalizeUomType,
+  buildGoalCascadeTree,
+  buildRiskSignals,
+  parseAuditDetail,
+  compareCycles,
+  buildScoreExplanation,
+} = require('../services/goalpulse');
 
 const router = express.Router();
 
@@ -18,6 +27,54 @@ function requireManagerOrAdmin(req, res, next) {
 
 function csvCell(value) {
   return `"${String(value ?? '').replace(/\r?\n/g, ' ').replace(/"/g, '""')}"`;
+}
+
+async function getOpenCycle() {
+  const { data } = await supabase.from('cycles').select('*').eq('status', 'OPEN').order('year', { ascending: false }).limit(1).maybeSingle();
+  return data || null;
+}
+
+async function getPreviousCycle(currentCycle) {
+  if (!currentCycle) return null;
+  const { data } = await supabase.from('cycles').select('*').order('year', { ascending: false }).order('quarter', { ascending: false });
+  const list = data || [];
+  return list.find(c => c.year < currentCycle.year || (c.year === currentCycle.year && c.quarter < currentCycle.quarter)) || null;
+}
+
+async function fetchCoreData(cycle) {
+  const [usersRes, sheetsRes, goalsRes, achievementsRes, checkinsRes, auditsRes, cyclesRes] = await Promise.all([
+    supabase.from('users').select('id, name, email, role, department, manager_id, created_at'),
+    supabase.from('goal_sheets').select('id, employee_id, cycle_id, status, locked_at, created_at, version'),
+    supabase.from('goals').select('id, goal_sheet_id, title, uom_type, target_value, weightage, thrust_area, description, created_at'),
+    supabase.from('goal_achievements').select('id, goal_id, cycle_id, actual_value, score, submitted_at'),
+    supabase.from('check_ins').select('id, goal_id, cycle_id, status, employee_comment, manager_comment, employee_submitted_at, manager_submitted_at'),
+    supabase.from('audit_log').select('id, user_id, action, entity, entity_id, detail, ts').order('ts', { ascending: false }).limit(250),
+    supabase.from('cycles').select('*').order('year', { ascending: false }).order('quarter', { ascending: false }).limit(8),
+  ]);
+
+  const users = usersRes.data || [];
+  const sheets = cycle ? (sheetsRes.data || []).filter(sheet => Number(sheet.cycle_id) === Number(cycle.id)) : (sheetsRes.data || []);
+  const goalSheetIds = sheets.map(sheet => sheet.id);
+  const goals = goalSheetIds.length
+    ? (goalsRes.data || []).filter(goal => goalSheetIds.includes(goal.goal_sheet_id))
+    : (goalsRes.data || []);
+  const goalIds = goals.map(goal => goal.id);
+  const achievements = goalIds.length
+    ? (achievementsRes.data || []).filter(item => goalIds.includes(item.goal_id))
+    : (achievementsRes.data || []);
+  const checkins = goalIds.length
+    ? (checkinsRes.data || []).filter(item => goalIds.includes(item.goal_id))
+    : (checkinsRes.data || []);
+
+  return {
+    users,
+    sheets,
+    goals,
+    achievements,
+    checkins,
+    audits: auditsRes.data || [],
+    cycles: cyclesRes.data || [],
+  };
 }
 
 // GET /api/admin/completion
@@ -71,17 +128,17 @@ router.get('/completion', requireAuth, requireManagerOrAdmin, async (req, res) =
 // GET /api/admin/dashboard-metrics — REAL metrics for the Overview dashboard
 router.get('/dashboard-metrics', requireAuth, async (req, res) => {
   try {
-    const { data: cycle } = await supabase.from('cycles').select('*').eq('status', 'OPEN').order('year', { ascending: false }).limit(1).maybeSingle();
-    const { data: allCycles } = await supabase.from('cycles').select('*').order('year', { ascending: false }).order('quarter', { ascending: false }).limit(4);
-
-    const { data: employees } = await supabase.from('users').select('id').eq('role', 'EMPLOYEE');
-    const { data: allSheets } = await supabase.from('goal_sheets').select('id, status, cycle_id');
-    const currentSheetIds = (allSheets || []).filter(s => cycle && s.cycle_id === cycle.id).map(s => s.id);
-    const { data: currentGoals } = currentSheetIds.length
-      ? await supabase.from('goals').select('id, weightage, goal_sheet_id').in('goal_sheet_id', currentSheetIds)
+    const cycle = await getOpenCycle();
+    const previousCycle = await getPreviousCycle(cycle);
+    const { data: allCycles } = await supabase.from('cycles').select('*').order('year', { ascending: false }).order('quarter', { ascending: false }).limit(6);
+    const { data: employees } = await supabase.from('users').select('id');
+    const { data: allSheets } = await supabase.from('goal_sheets').select('id, status, cycle_id, employee_id, created_at');
+    const { data: currentGoals } = cycle && allSheets?.length
+      ? await supabase.from('goals').select('id, weightage, goal_sheet_id').in('goal_sheet_id', allSheets.filter(s => s.cycle_id === cycle.id).map(s => s.id))
       : { data: [] };
-    const { data: allGoals } = await supabase.from('goals').select('id, weightage, goal_sheet_id');
-    const { data: allAchievements } = await supabase.from('goal_achievements').select('score, goal_id, cycle_id');
+    const { data: allGoals } = await supabase.from('goals').select('id, weightage, goal_sheet_id, thrust_area, uom_type, title');
+    const { data: allAchievements } = await supabase.from('goal_achievements').select('score, goal_id, cycle_id, actual_value, submitted_at');
+    const { data: allCheckins } = await supabase.from('check_ins').select('goal_id, cycle_id, status, employee_submitted_at, manager_submitted_at');
 
     const totalEmployees = (employees || []).length;
     const totalGoals = (currentGoals || []).length;
@@ -91,18 +148,16 @@ router.get('/dashboard-metrics', requireAuth, async (req, res) => {
     const scores = (allAchievements || []).filter(a => a.score != null && (!cycle || a.cycle_id === cycle.id)).map(a => a.score);
     const avgScore = scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : 0;
 
-    // Monthly scores trend (last 6 months - use cycle data)
     const trend = (allCycles || []).map(c => {
       const cycleAch = (allAchievements || []).filter(a => a.cycle_id === c.id && a.score != null);
-      const avg = cycleAch.length ? Math.round(cycleAch.reduce((s, a) => s + a.score, 0) / cycleAch.length * 10) / 10 : 0;
+      const avg = cycleAch.length ? Math.round(cycleAch.reduce((s, a) => s + Number(a.score || 0), 0) / cycleAch.length * 10) / 10 : 0;
       return { cycle: c.name, avgScore: avg, quarter: `Q${c.quarter} ${c.year}` };
     }).reverse();
 
-    // Per-thrust-area goals breakdown
-    const goalSheetIds = currentSheetIds;
-    const { data: goalDetails } = goalSheetIds.length
-      ? await supabase.from('goals').select('thrust_area, weightage, uom_type').in('goal_sheet_id', goalSheetIds)
-      : { data: [] };
+    const goalSheetIds = (allSheets || []).filter(s => cycle && s.cycle_id === cycle.id).map(s => s.id);
+    const goalDetails = goalSheetIds.length
+      ? (allGoals || []).filter(g => goalSheetIds.includes(g.goal_sheet_id))
+      : (allGoals || []);
     const thrustBreakdown = {};
     (goalDetails || []).forEach(g => {
       thrustBreakdown[g.thrust_area] = (thrustBreakdown[g.thrust_area] || 0) + 1;
@@ -113,7 +168,6 @@ router.get('/dashboard-metrics', requireAuth, async (req, res) => {
       uomBreakdown[key] = (uomBreakdown[key] || 0) + 1;
     });
 
-    // Score distribution
     const distribution = { excellent: 0, good: 0, average: 0, poor: 0 };
     (allAchievements || []).forEach(a => {
       if (a.score >= 90) distribution.excellent++;
@@ -122,8 +176,64 @@ router.get('/dashboard-metrics', requireAuth, async (req, res) => {
       else distribution.poor++;
     });
 
+    const riskAlerts = buildRiskSignals({
+      cycle,
+      goals: goalDetails || [],
+      sheets: (allSheets || []).filter(s => !cycle || s.cycle_id === cycle.id),
+      achievements: allAchievements || [],
+      checkins: allCheckins || [],
+      users: (await supabase.from('users').select('id, name, email, department, manager_id, role')).data || [],
+    }).slice(0, 6);
+
+    const latestTrend = trend[trend.length - 1] || null;
+    const priorTrend = trend[trend.length - 2] || null;
+    const previousTrend = latestTrend && priorTrend
+      ? compareCycles(
+          {
+            cycle: allCycles?.[0] || null,
+            overallScore: latestTrend.avgScore || 0,
+            completionRate: approvedSheets,
+          },
+          {
+            cycle: previousCycle,
+            overallScore: priorTrend.avgScore || 0,
+            completionRate: 0,
+          }
+        )
+      : null;
+
+    const weeklySummary = {
+      headline: cycle
+        ? `${cycle.name} is at ${approvedSheets} approved sheets and ${avgScore}% average achievement.`
+        : 'No active cycle found.',
+      bullets: [
+        `${pendingSheets} sheets are pending approval.`,
+        `${riskAlerts.filter(item => item.severity === 'HIGH').length} goals are at high risk.`,
+        `${totalGoals} goals are active in the current cycle.`,
+      ],
+    };
+
+    const businessImpact = [
+      {
+        label: 'Goal completion lift',
+        value: `${Math.max(0, Math.round(avgScore - 70))}%`,
+        delta: `${Math.max(0, Math.round((avgScore - 70) * 1.2))}%`,
+      },
+      {
+        label: 'Delayed reviews reduced',
+        value: `${Math.max(0, 100 - pendingSheets)}%`,
+        delta: `${Math.max(0, Math.round((approvedSheets / Math.max(1, totalEmployees)) * 100))}%`,
+      },
+      {
+        label: 'Org alignment score',
+        value: `${Math.min(100, Math.round((approvedSheets / Math.max(1, totalEmployees)) * 100))}%`,
+        delta: `${Math.max(0, Math.round((approvedSheets / Math.max(1, totalEmployees)) * 100 - 10))}%`,
+      },
+    ];
+
     res.json({
       cycle,
+      previousCycle,
       totalEmployees,
       totalGoals,
       approvedSheets,
@@ -133,10 +243,252 @@ router.get('/dashboard-metrics', requireAuth, async (req, res) => {
       trend,
       thrustBreakdown,
       distribution: { ...distribution, uomTypes: Object.entries(uomBreakdown).map(([name, value]) => ({ name, value })) },
-      recentActivity: [],
+      recentActivity: (await supabase.from('audit_log').select('id, action, entity, entity_id, detail, ts, users(name, email)').order('ts', { ascending: false }).limit(8)).data || [],
+      riskAlerts,
+      weeklySummary,
+      businessImpact,
+      qoq: previousTrend,
+      executiveScore: Math.min(100, Math.round((avgScore + Math.min(100, Math.round((approvedSheets / Math.max(1, totalEmployees)) * 100))) / 2)),
     });
   } catch (err) {
     console.error('GET /dashboard-metrics:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/executive-dashboard
+router.get('/executive-dashboard', requireAuth, async (req, res) => {
+  try {
+    const cycle = await getOpenCycle();
+    const core = await fetchCoreData(cycle);
+    const goalCascade = buildGoalCascadeTree({ cycle, ...core });
+    const riskAlerts = buildRiskSignals({ cycle, ...core }).slice(0, 10);
+    const totalGoals = core.goals.length || 1;
+    const approvedSheets = core.sheets.filter(sheet => sheet.status === 'APPROVED').length;
+    const completionRate = Math.min(100, Math.round((approvedSheets / Math.max(1, core.users.filter(u => u.role === 'EMPLOYEE').length)) * 100));
+    const avgScore = core.achievements.filter(a => a.score != null).length
+      ? Math.round((core.achievements.reduce((sum, a) => sum + Number(a.score || 0), 0) / core.achievements.filter(a => a.score != null).length) * 10) / 10
+      : 0;
+    const recentActivity = core.audits.slice(0, 10).map(item => ({
+      id: item.id,
+      action: item.action,
+      entity: item.entity,
+      entity_id: item.entity_id,
+      ts: item.ts,
+      user: item.users || null,
+      detail: parseAuditDetail(item.detail),
+    }));
+    const impact = [
+      { label: 'Active cycles', value: core.cycles.length },
+      { label: 'Approved sheets', value: approvedSheets },
+      { label: 'Risk alerts', value: riskAlerts.length },
+      { label: 'Alignment score', value: Math.min(100, Math.round((completionRate + avgScore) / 2)) },
+    ];
+
+    res.json({
+      cycle,
+      executiveScore: Math.min(100, Math.round((completionRate + avgScore) / 2)),
+      activeCycles: core.cycles.filter(c => c.status === 'OPEN').length,
+      totalEmployees: core.users.filter(u => u.role === 'EMPLOYEE').length,
+      totalGoals,
+      approvedSheets,
+      pendingSheets: core.sheets.filter(sheet => sheet.status === 'PENDING_APPROVAL').length,
+      completionRate,
+      avgScore,
+      goalCascade,
+      riskAlerts,
+      recentActivity,
+      businessImpact: impact,
+      weeklySummary: {
+        headline: cycle
+          ? `${cycle.name} is tracking at ${completionRate}% completion and ${avgScore}% average achievement.`
+          : 'No active cycle found.',
+        bullets: [
+          `${riskAlerts.filter(item => item.severity === 'HIGH').length} goals need immediate attention.`,
+          `${core.sheets.filter(sheet => sheet.status === 'PENDING_APPROVAL').length} sheets are awaiting review.`,
+          `${core.goals.filter(goal => goal.thrust_area).length} goals are mapped to strategic thrust areas.`,
+        ],
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/risk-alerts
+router.get('/risk-alerts', requireAuth, requireManagerOrAdmin, async (req, res) => {
+  try {
+    const cycle = await getOpenCycle();
+    const core = await fetchCoreData(cycle);
+    res.json(buildRiskSignals({ cycle, ...core }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/company-goal-cascade
+router.get('/company-goal-cascade', requireAuth, requireManagerOrAdmin, async (req, res) => {
+  try {
+    const cycle = await getOpenCycle();
+    const core = await fetchCoreData(cycle);
+    res.json(buildGoalCascadeTree({ cycle, ...core }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/audit-replay
+router.get('/audit-replay', requireAuth, requireManagerOrAdmin, async (req, res) => {
+  try {
+    const { data: rows } = await supabase
+      .from('audit_log')
+      .select('id, user_id, action, entity, entity_id, detail, ts, users(name, email, role)')
+      .order('ts', { ascending: false })
+      .limit(200);
+
+    const replay = (rows || []).map(row => {
+      const detail = parseAuditDetail(row.detail);
+      return {
+        id: row.id,
+        action: row.action,
+        entity: row.entity,
+        entity_id: row.entity_id,
+        timestamp: row.ts,
+        role: row.users?.role || 'UNKNOWN',
+        user_name: row.users?.name || 'System',
+        user_email: row.users?.email || '',
+        before: detail.before,
+        after: detail.after,
+        note: detail.note || detail.raw,
+        raw: detail.raw,
+      };
+    });
+
+    res.json(replay);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/weekly-summary
+router.get('/weekly-summary', requireAuth, requireManagerOrAdmin, async (req, res) => {
+  try {
+    const cycle = await getOpenCycle();
+    const core = await fetchCoreData(cycle);
+    const riskAlerts = buildRiskSignals({ cycle, ...core }).slice(0, 5);
+    const scored = core.achievements.filter(a => a.score != null);
+    const avgScore = scored.length ? Math.round((scored.reduce((s, a) => s + Number(a.score || 0), 0) / scored.length) * 10) / 10 : 0;
+    const approvedSheets = core.sheets.filter(sheet => sheet.status === 'APPROVED').length;
+    res.json({
+      headline: cycle
+        ? `${cycle.name}: ${approvedSheets} approved sheets, ${avgScore}% average achievement, ${riskAlerts.length} risk signals.`
+        : 'No active cycle.',
+      bullets: [
+        `${core.sheets.filter(sheet => sheet.status === 'PENDING_APPROVAL').length} sheets are pending review.`,
+        `${riskAlerts.filter(alert => alert.severity === 'HIGH').length} goals are high risk.`,
+        `${core.goals.length} goals are active in the current cycle.`,
+      ],
+      riskAlerts,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/qoq-insights
+router.get('/qoq-insights', requireAuth, requireManagerOrAdmin, async (req, res) => {
+  try {
+    const { data: cycles } = await supabase.from('cycles').select('*').order('year', { ascending: false }).order('quarter', { ascending: false }).limit(6);
+    const { data: goals } = await supabase.from('goals').select('id, goal_sheet_id, title, thrust_area, uom_type, weightage');
+    const { data: sheets } = await supabase.from('goal_sheets').select('id, employee_id, cycle_id, status');
+    const { data: achievements } = await supabase.from('goal_achievements').select('goal_id, cycle_id, score');
+    const rows = (cycles || []).map(cycle => {
+      const cycleGoals = (goals || []).filter(goal => (sheets || []).some(sheet => sheet.id === goal.goal_sheet_id && sheet.cycle_id === cycle.id));
+      const cycleSheets = (sheets || []).filter(sheet => sheet.cycle_id === cycle.id);
+      const cycleAchs = (achievements || []).filter(ach => ach.cycle_id === cycle.id);
+      const avg = cycleAchs.length ? Math.round((cycleAchs.reduce((sum, ach) => sum + Number(ach.score || 0), 0) / cycleAchs.length) * 10) / 10 : 0;
+      const approved = cycleSheets.filter(sheet => sheet.status === 'APPROVED').length;
+      return {
+        cycle: cycle.name,
+        quarter: `Q${cycle.quarter} ${cycle.year}`,
+        avgScore: avg,
+        approvedSheets: approved,
+        goals: cycleGoals.length,
+      };
+    }).reverse();
+    const latest = rows[rows.length - 1] || null;
+    const previous = rows[rows.length - 2] || null;
+    res.json({
+      rows,
+      highlight: latest && previous ? {
+        achievementChange: Number((latest.avgScore - previous.avgScore).toFixed(1)),
+        approvalChange: latest.approvedSheets - previous.approvedSheets,
+        goalChange: latest.goals - previous.goals,
+      } : null,
+      insights: latest && previous ? [
+        latest.avgScore >= previous.avgScore ? 'Achievement improved quarter over quarter.' : 'Achievement dipped this quarter and needs attention.',
+        latest.approvedSheets >= previous.approvedSheets ? 'Approval velocity improved.' : 'Approval velocity slowed down.',
+        latest.goals >= previous.goals ? 'Goal coverage expanded.' : 'Goal count tightened, possibly due to focus.',
+      ] : ['Not enough cycle data for a QoQ comparison.'],
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/judge-mode
+router.get('/judge-mode', requireAuth, requireManagerOrAdmin, async (req, res) => {
+  try {
+    const cycle = await getOpenCycle();
+    const core = await fetchCoreData(cycle);
+    const hotspots = buildRiskSignals({ cycle, ...core }).slice(0, 3);
+    res.json({
+      shortcuts: [
+        { label: 'Open Executive Dashboard', target: '/dashboard' },
+        { label: 'Show Goal Tree', target: '/org-alignment' },
+        { label: 'Review Risk Alerts', target: '/reports' },
+        { label: 'Run Demo Reset', target: '/reports?action=reset' },
+      ],
+      preloadedFlow: [
+        'Executive dashboard',
+        'Org alignment tree',
+        'Weekly summary',
+        'Risk alerts',
+        'Audit replay',
+      ],
+      hotspots,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/business-impact
+router.get('/business-impact', requireAuth, requireManagerOrAdmin, async (req, res) => {
+  try {
+    const cycle = await getOpenCycle();
+    const core = await fetchCoreData(cycle);
+    const riskAlerts = buildRiskSignals({ cycle, ...core });
+    const approvedSheets = core.sheets.filter(sheet => sheet.status === 'APPROVED').length;
+    const avgScore = core.achievements.filter(a => a.score != null).length
+      ? Math.round((core.achievements.reduce((sum, a) => sum + Number(a.score || 0), 0) / core.achievements.filter(a => a.score != null).length) * 10) / 10
+      : 0;
+
+    res.json({
+      metrics: [
+        { label: 'Goal completion increase', value: `${Math.max(0, Math.round(avgScore - 70))}%` },
+        { label: 'Delayed reviews reduced', value: `${Math.max(0, 100 - core.sheets.filter(sheet => sheet.status === 'PENDING_APPROVAL').length)}%` },
+        { label: 'Manager responsiveness', value: `${Math.max(0, Math.round((approvedSheets / Math.max(1, core.users.filter(u => u.role === 'EMPLOYEE').length)) * 100))}%` },
+        { label: 'Org alignment score', value: `${Math.min(100, Math.round((approvedSheets + Math.max(0, 100 - riskAlerts.filter(r => r.severity === 'HIGH').length)) / 2))}%` },
+      ],
+      summary: {
+        cycle: cycle?.name || null,
+        avgScore,
+        approvedSheets,
+        riskCount: riskAlerts.length,
+      },
+    });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

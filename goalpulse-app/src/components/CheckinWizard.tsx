@@ -130,6 +130,9 @@ export default function CheckinWizard({ goal, onClose, onSave }: { goal: any; on
                     </div>
                   </div>
                 </div>
+                <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed #cbd5e1', fontSize: '12px', color: '#64748b', lineHeight: 1.6 }}>
+                  <strong style={{ color: '#0f172a' }}>Explainable score engine:</strong> this score is transparent. Numeric and percentage goals are capped at 100%, timeline goals reward on-time completion, and zero-based goals score 100% when the event happened.
+                </div>
               </div>
 
               <div style={{ marginBottom: '20px' }}>

@@ -82,6 +82,18 @@ export default function AdminReports() {
     enabled: rulesOpen && role === 'ADMIN',
   });
 
+  const { data: auditReplay } = useQuery({
+    queryKey: ['auditReplay'],
+    queryFn: () => api.get('/api/admin/audit-replay').then(r => r.data),
+    enabled: ['ADMIN', 'MANAGER'].includes(role || ''),
+  });
+
+  const { data: judgeMode } = useQuery({
+    queryKey: ['judgeMode'],
+    queryFn: () => api.get('/api/admin/judge-mode').then(r => r.data),
+    enabled: ['ADMIN', 'MANAGER'].includes(role || ''),
+  });
+
   const addRuleMutation = useMutation({
     mutationFn: (rule: any) => api.post('/api/admin/escalation-rules', rule),
     onSuccess: () => {
@@ -105,6 +117,8 @@ export default function AdminReports() {
       qc.invalidateQueries({ queryKey: ['escalations'] });
       qc.invalidateQueries({ queryKey: ['costDashboard'] });
       qc.invalidateQueries({ queryKey: ['complianceChecklist'] });
+      qc.invalidateQueries({ queryKey: ['auditReplay'] });
+      qc.invalidateQueries({ queryKey: ['judgeMode'] });
       alert('Database reset to demo data.');
     },
   });
@@ -150,7 +164,7 @@ export default function AdminReports() {
           )}
           {role === 'ADMIN' && (
             <button onClick={() => seedReset.mutate()} disabled={seedReset.isPending} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px', background: '#fff', border: '1px solid #e8eaed', borderRadius: '10px', fontSize: '14px', fontWeight: '600', color: '#374151', cursor: 'pointer', fontFamily: "'Inter', system-ui, sans-serif" }}>
-              Reset Demo
+              Demo Reset Mode
             </button>
           )}
           {role === 'ADMIN' && (
@@ -281,6 +295,32 @@ export default function AdminReports() {
         </div>
       )}
 
+      {judgeMode && (
+        <div style={{ ...S_CARD, marginBottom: '24px', border: '1px solid #dbeafe', background: '#eff6ff' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '12px' }}>
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Judge Mode</div>
+              <div style={{ fontWeight: 800, color: '#111827', marginTop: '4px' }}>Preloaded demo flow and shortcuts</div>
+            </div>
+            <span style={{ fontSize: '12px', color: '#2563eb', background: '#dbeafe', borderRadius: '999px', padding: '4px 10px', fontWeight: 700 }}>Presentation ready</span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+            {(judgeMode.shortcuts || []).map((item: any) => (
+              <span key={item.label} style={{ background: '#fff', color: '#1d4ed8', borderRadius: '999px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, border: '1px solid #bfdbfe' }}>
+                {item.label}
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {(judgeMode.preloadedFlow || []).map((step: string, idx: number) => (
+              <span key={step} style={{ background: '#fff', color: '#0f172a', borderRadius: '999px', padding: '6px 10px', fontSize: '12px', fontWeight: 600, border: '1px solid #e2e8f0' }}>
+                {idx + 1}. {step}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {summary && (
         <div className="dash-grid-4" style={{ marginBottom: '24px' }}>
           {[
@@ -355,6 +395,41 @@ export default function AdminReports() {
         </div>
       )}
 
+      {auditReplay && auditReplay.length > 0 && (
+        <div style={{ ...S_CARD, marginBottom: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '12px', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Live Audit Replay</div>
+              <div style={{ fontWeight: 700, color: '#111827', marginTop: '4px' }}>Chronological timeline of edits, approvals, and check-ins</div>
+            </div>
+            <span style={{ fontSize: '12px', color: '#64748b' }}>{auditReplay.length} events</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '340px', overflowY: 'auto' }}>
+            {auditReplay.slice(0, 20).map((event: any) => (
+              <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '170px 120px 1fr', gap: '12px', alignItems: 'flex-start', padding: '12px 14px', borderRadius: '14px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>{event.timestamp}</div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{event.user_name} · {event.role}</div>
+                </div>
+                <div>
+                  <div style={{ display: 'inline-flex', padding: '4px 8px', borderRadius: 999, background: '#eff6ff', color: '#2563eb', fontSize: '11px', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{event.action}</div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '8px' }}>{event.entity} #{event.entity_id}</div>
+                </div>
+                <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.6 }}>
+                  <div>{event.note}</div>
+                  {(event.before || event.after) && (
+                    <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+                      <div><strong style={{ color: '#0f172a' }}>Before:</strong> {event.before ? JSON.stringify(event.before) : 'n/a'}</div>
+                      <div><strong style={{ color: '#0f172a' }}>After:</strong> {event.after ? JSON.stringify(event.after) : 'n/a'}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ ...S_CARD, overflow: 'hidden', marginBottom: '24px' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', fontWeight: '600', fontSize: '15px', color: '#111827' }}>
           Employee Status
@@ -417,7 +492,7 @@ export default function AdminReports() {
                 <div key={log.id} style={{ display: 'flex', gap: '12px', padding: '8px 0', borderBottom: '1px solid #f3f4f6', fontSize: '12px', fontFamily: "'Inter', system-ui, sans-serif" }}>
                   <div style={{ color: '#9ca3af', whiteSpace: 'nowrap', minWidth: '130px' }}>{log.ts}</div>
                   <div style={{ color: '#2563eb', fontWeight: '700', minWidth: '100px' }}>{log.action}</div>
-                  <div style={{ color: '#374151', flex: 1 }}><span style={{ color: '#9ca3af' }}>{log.user_name}</span> · {log.detail || `${log.entity} #${log.entity_id}`}</div>
+                  <div style={{ color: '#374151', flex: 1 }}><span style={{ color: '#9ca3af' }}>{log.users?.name || 'System'}</span> · {log.detail || `${log.entity} #${log.entity_id}`}</div>
                 </div>
               ))}
             </div>

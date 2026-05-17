@@ -1,13 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '../lib/api';
 import OrgTree from '../components/OrgTree';
+import GoalCascadeTree from '../components/GoalCascadeTree';
+import { useState } from 'react';
 
 interface User { id: number; name: string; email: string; role: string; department: string; manager_id: number | null; }
 
 export default function OrgAlignment() {
+  const [selectedGoalNode, setSelectedGoalNode] = useState<any>(null);
   const { data: users, isLoading } = useQuery<User[]>({
     queryKey: ['orgTree'],
     queryFn: () => api.get('/api/admin/org-tree').then(r => r.data),
+  });
+  const { data: cascade } = useQuery({
+    queryKey: ['companyGoalCascade'],
+    queryFn: () => api.get('/api/admin/company-goal-cascade').then(r => r.data),
   });
 
   if (isLoading) return <div style={{ padding: '40px', fontFamily: "'Inter', system-ui, sans-serif", color: '#9ca3af' }}>Loading org chart...</div>;
@@ -36,7 +43,36 @@ export default function OrgAlignment() {
         ))}
       </div>
 
-      <OrgTree users={users || []} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20 }}>
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Company Goal Cascade</div>
+              <div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>From company objective to department and employee goals.</div>
+            </div>
+            {selectedGoalNode && (
+              <div style={{ padding: '10px 14px', background: '#0f172a', color: '#fff', borderRadius: 16, maxWidth: 360 }}>
+                <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.7 }}>{selectedGoalNode.kind}</div>
+                <div style={{ fontWeight: 800, marginTop: 4 }}>{selectedGoalNode.label}</div>
+                <div style={{ fontSize: 13, opacity: 0.9, marginTop: 4 }}>
+                  {selectedGoalNode.explanation?.summary || `${selectedGoalNode.progress || selectedGoalNode.score || 0}% progress`}
+                </div>
+              </div>
+            )}
+          </div>
+          <GoalCascadeTree tree={cascade || null} onNodeClick={setSelectedGoalNode} />
+        </div>
+
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#9ca3af', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Org Chart</div>
+              <div style={{ fontSize: 14, color: '#64748b', marginTop: 4 }}>People hierarchy and reporting lines.</div>
+            </div>
+          </div>
+          <OrgTree users={users || []} />
+        </div>
+      </div>
     </div>
   );
 }

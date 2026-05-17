@@ -1774,4 +1774,141 @@ body,
   }
 }
 
+/* --- Landing Page Responsive Layouts --- */
+@media (max-width: 1024px) {
+  .bt-security-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .bt-footer-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+  }
+}
+
+@media (max-width: 768px) {
+  .bt-header {
+    flex-direction: column;
+    gap: 24px;
+    padding: 32px 16px;
+    align-items: center;
+  }
+  .bt-nav {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 16px 24px;
+  }
+  .bt-actions {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .bt-pink-grid {
+    grid-template-columns: 1fr;
+    gap: 48px;
+  }
+  .bt-pink-content h2 {
+    font-size: 32px;
+    line-height: 1.2;
+    margin-bottom: 24px;
+  }
+  .bt-toolchain-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .bt-green-content h2 {
+    font-size: 28px;
+    line-height: 1.2;
+  }
+  .bt-green-content p {
+    font-size: 15px;
+    margin-bottom: 32px;
+  }
+  .bt-bar-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .bt-bar-label {
+    width: auto;
+    font-size: 11px;
+  }
+  .bt-bar-container {
+    width: 100% !important;
+    height: 28px;
+  }
+  .bt-bar-value {
+    font-size: 11px;
+  }
+  .bt-security-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .bt-footer-grid {
+    grid-template-columns: 1fr;
+    row-gap: 48px; /* Generous breathing room between stacked footer columns */
+    text-align: center;
+  }
+  .bt-footer-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .bt-footer-links {
+    align-items: center;
+    gap: 14px;
+  }
+  .bt-footer-col h5 {
+    margin-bottom: 16px;
+  }
+  .bt-hero {
+    padding: 60px 0 80px;
+  }
+  .bt-hero h1 {
+    font-size: clamp(32px, 8vw, 46px);
+    line-height: 1.3; /* Added breathing space between wrapped lines */
+    margin-bottom: 32px;
+  }
+  .bt-hero h1 span::after {
+    bottom: -8px; /* Pushed underline down so it sits perfectly below the text */
+    height: 5px;
+  }
+  .bt-hero p {
+    font-size: 16px;
+    line-height: 1.7;
+    margin-bottom: 36px;
+    padding: 0 8px;
+  }
+  .bt-hero-actions {
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    max-width: 280px;
+    margin: 0 auto;
+  }
+  .bt-hero-actions .bt-btn {
+    width: 100%;
+    padding: 12px 20px;
+    font-size: 15px;
+  }
+  .bt-pink-section {
+    padding: 80px 0;
+  }
+  .bt-toolchain {
+    padding: 80px 0;
+  }
+  .bt-green-section {
+    padding: 80px 0;
+  }
+  .bt-security {
+    padding: 80px 0;
+  }
+  .bt-cta {
+    padding: 80px 0;
+  }
+}
+
+
+
 

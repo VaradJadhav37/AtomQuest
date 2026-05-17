@@ -261,7 +261,13 @@ export default function Dashboard() {
     queryFn: () => api.get('/api/goal-sheets/mine').then(r => r.data),
   });
 
-  if (metricsLoading || sheetLoading) return <DashboardSkeleton />;
+  const { data: executive, isLoading: executiveLoading } = useQuery({
+    queryKey: ['executiveDashboard'],
+    queryFn: () => api.get('/api/admin/executive-dashboard').then(r => r.data),
+    enabled: role === 'ADMIN' || role === 'MANAGER',
+  });
+
+  if (metricsLoading || sheetLoading || executiveLoading) return <DashboardSkeleton />;
 
   const thrustData = metrics
     ? Object.entries(metrics.thrustBreakdown || {}).map(([name, count]) => ({
@@ -371,6 +377,90 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {executive && (
+        <div style={{ marginBottom: 24 }}>
+          <div className="dash-grid-2-wide">
+            <ShellCard
+              title="Executive Command Center"
+              subtitle={executive.weeklySummary?.headline || 'Live organization pulse for the current cycle.'}
+              extra={<MiniPill label="Judge Mode" />}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12, marginBottom: 18 }}>
+                {[
+                  { label: 'Score', value: `${executive.executiveScore || 0}%`, color: PALETTE.blue },
+                  { label: 'Employees', value: executive.totalEmployees || 0, color: PALETTE.green },
+                  { label: 'Goals', value: executive.totalGoals || 0, color: PALETTE.purple },
+                  { label: 'Risks', value: executive.riskAlerts?.length || 0, color: PALETTE.red },
+                ].map(item => (
+                  <div key={item.label} style={{ padding: 14, borderRadius: 18, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b' }}>{item.label}</div>
+                    <div style={{ marginTop: 8, fontFamily: DISPLAY, fontSize: 38, fontWeight: 400, lineHeight: 1, color: item.color }}>{item.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: 14 }}>
+                <div style={{ padding: 16, borderRadius: 18, background: '#0f172a', color: '#fff' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)' }}>Weekly Summary</div>
+                  <div style={{ marginTop: 10, fontSize: 15, lineHeight: 1.7 }}>{executive.weeklySummary?.headline}</div>
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(executive.weeklySummary?.bullets || []).map((bullet: string) => (
+                      <div key={bullet} style={{ display: 'flex', gap: 8, fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#60a5fa', marginTop: 7, flexShrink: 0 }} />
+                        <span>{bullet}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ padding: 16, borderRadius: 18, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#64748b' }}>Business Impact</div>
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {(executive.businessImpact || []).map((item: any) => (
+                      <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '10px 12px', borderRadius: 14, background: '#fff', border: '1px solid #e2e8f0' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{item.label}</div>
+                          <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Live impact metric</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontFamily: DISPLAY, fontSize: 26, fontWeight: 400, lineHeight: 1, color: PALETTE.blue }}>{item.value}</div>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: PALETTE.green, marginTop: 2 }}>{item.delta}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </ShellCard>
+
+            <ShellCard
+              title="Risk Radar"
+              subtitle="Intelligent at-risk goals detected before deadlines slip."
+              extra={<MiniPill label="At Risk" />}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {(executive.riskAlerts || []).slice(0, 5).map((risk: any) => (
+                  <div key={risk.goal_id} style={{ padding: 14, borderRadius: 16, background: risk.severity === 'HIGH' ? '#fff1f2' : '#fff7ed', border: `1px solid ${risk.severity === 'HIGH' ? '#fecdd3' : '#fed7aa'}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{risk.goal_title}</div>
+                        <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>{risk.employee_name} · {risk.department} · {risk.thrust_area}</div>
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: risk.severity === 'HIGH' ? '#dc2626' : '#d97706' }}>
+                        {risk.riskScore} / 100
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 12, color: '#475569', lineHeight: 1.6 }}>
+                      {(risk.reasons || []).slice(0, 2).join(' · ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ShellCard>
+          </div>
+        </div>
+      )}
 
       {mySheet && (
         <div style={{ marginBottom: 24 }}>

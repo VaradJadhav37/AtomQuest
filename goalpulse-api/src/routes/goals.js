@@ -163,7 +163,10 @@ router.post('/', requireAuth, async (req, res) => {
       action: 'CREATED',
       entity: 'goal',
       entity_id: goal.id,
-      detail: `Created: ${title}`,
+      detail: JSON.stringify({
+        note: `Created goal ${title}`,
+        after: goal,
+      }),
     });
 
     res.status(201).json(goal);
@@ -325,7 +328,11 @@ router.patch('/:id', requireAuth, async (req, res) => {
       action: 'UPDATED',
       entity: 'goal',
       entity_id: goal.id,
-      detail: `Updated: ${title || goal.title}`,
+      detail: JSON.stringify({
+        note: `Updated goal ${title || goal.title}`,
+        before: goal,
+        after: updated,
+      }),
     });
 
     res.json(updated);
@@ -359,7 +366,11 @@ router.delete('/:id', requireAuth, async (req, res) => {
       action: 'DELETED',
       entity: 'goal',
       entity_id: goal.id,
-      detail: `Deleted: ${goal.title}`,
+      detail: JSON.stringify({
+        note: `Deleted goal ${goal.title}`,
+        before: goal,
+        after: null,
+      }),
     });
 
     res.json({ ok: true });
@@ -389,7 +400,10 @@ router.post('/submit/:sheetId', requireAuth, async (req, res) => {
       action: 'SUBMITTED',
       entity: 'goal_sheet',
       entity_id: sheet.id,
-      detail: 'Submitted for manager approval',
+      detail: JSON.stringify({
+        note: 'Submitted for manager approval',
+        after: { status: 'PENDING_APPROVAL' },
+      }),
     });
 
     res.json({ ok: true, status: 'PENDING_APPROVAL' });
@@ -428,7 +442,10 @@ router.patch('/approve/:sheetId', requireAuth, async (req, res) => {
       action,
       entity: 'goal_sheet',
       entity_id: sheet.id,
-      detail: comment || `Goal sheet ${action.toLowerCase()} by manager`,
+      detail: JSON.stringify({
+        note: comment || `Goal sheet ${action.toLowerCase()} by manager`,
+        after: { status: newStatus, locked_at: updates.locked_at || null },
+      }),
     });
 
     res.json({ ok: true, status: newStatus });

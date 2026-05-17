@@ -25,6 +25,9 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
   });
   const [aiScorecard, setAiScorecard] = useState<any>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [rewritePreview, setRewritePreview] = useState('');
+  const [rewriteRationale, setRewriteRationale] = useState('');
+  const [rewriteLoading, setRewriteLoading] = useState(false);
   const [error, setError] = useState('');
   const availableWeightage = Math.max(0, remainingWeightage);
   const weightageMax = availableWeightage >= 10 ? availableWeightage : undefined;
@@ -56,6 +59,72 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
     }, 1500);
     return () => clearTimeout(timer);
   }, [form.title, form.description, form.uom_type, form.target_value]);
+
+  const rewriteGoal = async () => {
+    if (!form.title.trim()) return;
+    setRewriteLoading(true);
+    setRewritePreview('');
+    setRewriteRationale('');
+
+    try {
+      const response = await fetch(`${api.defaults.baseURL}/api/ai/rewrite-goal?stream=1`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('gp_token') || ''}`,
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
+        body: JSON.stringify(form),
+      });
+
+      if (!response.ok || !response.body) throw new Error('Rewrite stream failed');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let collected = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary !== -1) {
+          const raw = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf('\n\n');
+
+          for (const line of raw.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            const payload = line.slice(6).trim();
+            if (!payload || payload === '[DONE]') continue;
+            const event = JSON.parse(payload);
+            if (event.type === 'token' && event.token) {
+              collected += event.token;
+              setRewritePreview(collected);
+            }
+            if (event.type === 'done' && event.goal) {
+              const nextTitle = event.goal.title || form.title;
+              const nextDescription = event.goal.description || form.description;
+              setRewritePreview(nextTitle);
+              setRewriteRationale(event.goal.rationale || '');
+              setForm(current => ({
+                ...current,
+                title: nextTitle,
+                description: nextDescription,
+              }));
+            }
+          }
+        }
+      }
+    } catch {
+      setRewritePreview('Increase quarterly performance with a measurable business outcome.');
+      setRewriteRationale('Fallback rewrite generated locally.');
+    } finally {
+      setRewriteLoading(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,16 +168,36 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
       <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px rgba(0,0,0,0.15)' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '24px 28px', borderBottom: '1px solid #f3f4f6' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '24px 28px', borderBottom: '1px solid #f3f4f6' }}>
           <div>
             <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '24px', fontWeight: '700', color: '#111827' }}>{editGoal ? 'Edit Goal' : 'New Goal'}</h2>
             <p style={{ fontSize: '13px', color: '#9ca3af', fontFamily: "'Inter', system-ui, sans-serif", marginTop: '2px' }}>
               {editGoal ? 'Update goal details' : `Remaining weightage: ${remainingWeightage}%`}
             </p>
           </div>
-          <button onClick={onClose} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <X size={16} color="#6b7280" />
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => void rewriteGoal()}
+              disabled={rewriteLoading || !form.title.trim()}
+              style={{
+                padding: '8px 12px',
+                background: rewriteLoading ? '#f5f3ff' : '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: 12,
+                color: '#2563eb',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: rewriteLoading || !form.title.trim() ? 'not-allowed' : 'pointer',
+                fontFamily: "'Inter', system-ui, sans-serif",
+              }}
+            >
+              {rewriteLoading ? 'Rewriting...' : 'Improve Goal'}
+            </button>
+            <button onClick={onClose} style={{ background: '#f3f4f6', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <X size={16} color="#6b7280" />
+            </button>
+          </div>
         </div>
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -205,6 +294,34 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
                 {renderSmartScore('T - Time-bound', aiScorecard.time_bound)}
               </div>
             ) : null}
+
+            {rewritePreview && (
+              <div style={{ marginTop: '24px', padding: '16px', borderRadius: 16, background: '#fff', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#64748b' }}>Rewrite Preview</div>
+                <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700, color: '#0f172a', lineHeight: 1.5 }}>{rewritePreview}</div>
+                {rewriteRationale && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#64748b', lineHeight: 1.6 }}>{rewriteRationale}</div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setForm(current => ({ ...current, title: rewritePreview, description: current.description || rewriteRationale }))}
+                  style={{
+                    marginTop: 12,
+                    padding: '8px 12px',
+                    background: '#111827',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 10,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontFamily: "'Inter', system-ui, sans-serif",
+                  }}
+                >
+                  Apply Rewrite
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

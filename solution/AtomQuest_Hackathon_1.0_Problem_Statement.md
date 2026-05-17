@@ -96,6 +96,13 @@ While not mandatory, the following enhancements will be positively evaluated and
 - Automatic org hierarchy sync — reporting lines derived from Azure AD attributes
 - Role assignment mapped from Azure AD group membership
 
+**Practical implementation note for GoalPulse:**
+- Use Microsoft Entra ID as an optional SSO provider, not a replacement for the core app auth flow.
+- Register the app as a SPA in Entra ID and add the local and production redirect URIs.
+- Use `MSAL React` for the browser login flow.
+- After login, send the Entra `id_token` claims to the backend and map `email`, `name`, `group memberships`, and `manager` fields to your local user table.
+- For the hackathon demo, keep the existing username/password demo users as a fallback so the app always remains runnable even if the tenant or network is unavailable.
+
 ### 5.2 Email & Microsoft Teams Integration
 
 - Automated email notifications for key events: goal submission, approval, rejection, check-in reminders
