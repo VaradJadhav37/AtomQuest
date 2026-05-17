@@ -20,7 +20,7 @@ const allowedOrigins = new Set(
   'https://atom-quest-kappa.vercel.app',
 ].forEach(origin => allowedOrigins.add(origin));
 
-app.use(cors({
+const corsOptions = {
   origin(origin, callback) {
     if (!origin) return callback(null, true);
     if (allowedOrigins.has(origin)) return callback(null, true);
@@ -29,8 +29,10 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-goalpulse-email'],
-}));
-app.options('*', cors());
+};
+
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 app.use(express.json());
 
 // ── Routes ────────────────────────────────────────────────────────────────
