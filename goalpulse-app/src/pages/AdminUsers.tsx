@@ -167,9 +167,13 @@ export default function AdminUsers() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: 24 }}><Empty text="Loading users..." /></td>
-                </tr>
+                [1, 2, 3, 4, 5].map(i => (
+                  <tr key={i}>
+                    <td colSpan={6} style={{ padding: '14px 10px' }}>
+                      <div className="skeleton" style={{ height: '24px', borderRadius: '8px', width: '100%' }} />
+                    </td>
+                  </tr>
+                ))
               ) : users.map((user: any) => (
                 <tr key={user.id}>
                   <td style={tdStrong}>{user.name}</td>

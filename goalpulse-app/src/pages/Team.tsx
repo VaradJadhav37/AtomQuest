@@ -27,7 +27,7 @@ export default function Team() {
   const { data, isLoading } = useQuery({
     queryKey: ['teamSheets'],
     queryFn: () => api.get('/api/team/sheets').then(r => r.data),
-    enabled: role === 'MANAGER' || role === 'ADMIN',
+    enabled: ['MANAGER', 'ADMIN'].includes(String(role).toUpperCase()),
   });
 
   const approveMutation = useMutation({
@@ -43,7 +43,7 @@ export default function Team() {
   });
 
 
-  if (role !== 'MANAGER' && role !== 'ADMIN') {
+  if (!['MANAGER', 'ADMIN'].includes(String(role).toUpperCase())) {
     return <div style={{ padding: '40px', fontFamily: "'Inter', system-ui, sans-serif", color: '#6b7280', textAlign: 'center' }}>This page is only accessible to Managers and Admins.</div>;
   }
 
@@ -88,7 +88,15 @@ export default function Team() {
 
       {/* Employee cards */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {!sheets?.length && <div style={{ padding: '40px', textAlign: 'center', color: '#9ca3af' }}>No direct reports found.</div>}
+        {!sheets?.length && (
+          <div style={{ textAlign: 'center', padding: '64px 20px', background: '#fff', border: '1px solid #e8eaed', borderRadius: '16px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>👥</div>
+            <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#111827', marginBottom: '8px' }}>No Direct Reports</h2>
+            <p style={{ color: '#6b7280', fontSize: '14px', maxWidth: '400px', margin: '0 auto' }}>
+              You do not have any direct reports assigned to you in the system.
+            </p>
+          </div>
+        )}
         {sheets?.map((item: any) => {
           const { employee, sheet, goals, totalWeightage } = item;
           const status = sheet?.status || 'NOT_STARTED';
@@ -229,8 +237,12 @@ export default function Team() {
 
 function LoadingState() {
   return (
-    <div style={{ padding: '28px 32px' }}>
-      {[1, 2, 3].map(i => <div key={i} style={{ height: '70px', background: '#f3f4f6', borderRadius: '12px', marginBottom: '12px' }} />)}
+    <div className="page-container fade-in" style={{ padding: '32px' }}>
+      <div className="skeleton" style={{ height: '140px', borderRadius: '24px', marginBottom: '24px' }} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: '24px' }}>
+        <div className="skeleton" style={{ height: '400px', borderRadius: '24px' }} />
+        <div className="skeleton" style={{ height: '400px', borderRadius: '24px' }} />
+      </div>
     </div>
   );
 }

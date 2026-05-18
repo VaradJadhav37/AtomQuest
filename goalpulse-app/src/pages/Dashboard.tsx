@@ -258,6 +258,8 @@ export default function Dashboard() {
   const { data: metrics, isLoading: metricsLoading, error: metricsError } = useQuery<Metrics>({
     queryKey: ['dashboardMetrics'],
     queryFn: () => api.get('/api/admin/dashboard-metrics').then(r => r.data),
+    // Only managers and admins have access to org-wide metrics
+    enabled: role === 'MANAGER' || role === 'ADMIN',
   });
 
   const { data: mySheet, isLoading: sheetLoading } = useQuery({
@@ -267,17 +269,22 @@ export default function Dashboard() {
 
   const { data: myTeams } = useQuery({
     queryKey: ['myTeams'],
-    queryFn: () => api.get('/api/teams/my/summary').then(r => r.data),
+    queryFn: () => api.get('/api/teams/mine').then(r => r.data),
     enabled: role === 'EMPLOYEE',
   });
 
   const { data: executive, isLoading: executiveLoading } = useQuery({
     queryKey: ['executiveDashboard'],
     queryFn: () => api.get('/api/admin/executive-dashboard').then(r => r.data),
+    // Only managers and admins have access to executive dashboard
     enabled: role === 'ADMIN' || role === 'MANAGER',
   });
 
-  if (metricsLoading || sheetLoading || executiveLoading) return <DashboardSkeleton />;
+  // For employees: only wait on personal sheet. For managers/admins: also wait on metrics.
+  const isPageLoading = sheetLoading ||
+    ((role === 'MANAGER' || role === 'ADMIN') && (metricsLoading || executiveLoading));
+
+  if (isPageLoading) return <DashboardSkeleton />;
 
   const thrustData = metrics
     ? Object.entries(metrics.thrustBreakdown || {}).map(([name, count]) => ({
@@ -561,7 +568,19 @@ export default function Dashboard() {
                   <div style={{ marginTop: 6, fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
                     Managed by {membership.team?.manager?.name || 'N/A'}
                   </div>
-                  <div style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999, background: '#ecfdf5', color: '#166534', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                  
+                  {/* Team Progress Indicator */}
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 6 }}>
+                      <span>Team Goals: {membership.team?.goal_count || 0}</span>
+                      <span>{membership.team?.avg_progress || 0}%</span>
+                    </div>
+                    <div style={{ height: 6, background: '#e2e8f0', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${membership.team?.avg_progress || 0}%`, background: '#2563eb', borderRadius: 999 }} />
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 14, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999, background: '#ecfdf5', color: '#166534', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>
                     Active member
                   </div>
                 </div>
@@ -982,19 +1001,19 @@ function EmptyChart({ message }: { message: string }) {
 function DashboardSkeleton() {
   return (
     <div style={{ padding: '24px 28px 32px', fontFamily: SANS }}>
-      <div style={{ height: 86, background: '#e5e7eb', borderRadius: 24, marginBottom: 20 }} />
+      <div className="skeleton" style={{ height: 86, borderRadius: 24, marginBottom: 20 }} />
       <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 0.9fr', gap: 16, marginBottom: 16 }}>
-        <div style={{ height: 190, background: '#e5e7eb', borderRadius: 28 }} />
-        <div style={{ height: 190, background: '#e5e7eb', borderRadius: 28 }} />
+        <div className="skeleton" style={{ height: 190, borderRadius: 28 }} />
+        <div className="skeleton" style={{ height: 190, borderRadius: 28 }} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 16 }}>
         {[1, 2, 3, 4].map(i => (
-          <div key={i} style={{ height: 144, background: '#e5e7eb', borderRadius: 24 }} />
+          <div key={i} className="skeleton" style={{ height: 144, borderRadius: 24 }} />
         ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <div style={{ height: 290, background: '#e5e7eb', borderRadius: 28 }} />
-        <div style={{ height: 290, background: '#e5e7eb', borderRadius: 28 }} />
+        <div className="skeleton" style={{ height: 290, borderRadius: 28 }} />
+        <div className="skeleton" style={{ height: 290, borderRadius: 28 }} />
       </div>
     </div>
   );

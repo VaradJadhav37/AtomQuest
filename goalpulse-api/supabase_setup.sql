@@ -79,14 +79,38 @@ CREATE TABLE IF NOT EXISTS goals (
   id            SERIAL PRIMARY KEY,
   goal_sheet_id INTEGER NOT NULL REFERENCES goal_sheets(id) ON DELETE CASCADE,
   team_id       INTEGER REFERENCES teams(id),
+  owner_id      INTEGER REFERENCES users(id),
   title         TEXT NOT NULL,
   uom_type      TEXT NOT NULL CHECK(uom_type IN ('Numeric','Percentage','Timeline','Zero')),
   target_value  TEXT NOT NULL,
   weightage     INTEGER NOT NULL CHECK(weightage BETWEEN 1 AND 100),
   thrust_area   TEXT DEFAULT 'General',
   description   TEXT DEFAULT '',
+  priority      TEXT NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+  goal_status   TEXT NOT NULL DEFAULT 'NOT_STARTED' CHECK (goal_status IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'ARCHIVED')),
+  visibility    TEXT NOT NULL DEFAULT 'TEAM' CHECK (visibility IN ('TEAM', 'MANAGER_ONLY', 'PRIVATE')),
+  deadline      DATE,
+  completion_pct NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (completion_pct >= 0 AND completion_pct <= 100),
+  blocked_reason TEXT DEFAULT '',
+  archived_at   TIMESTAMPTZ,
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migrations for existing `goals` table instances:
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS team_id INTEGER REFERENCES teams(id);
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id);
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'MEDIUM';
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS goal_status TEXT NOT NULL DEFAULT 'NOT_STARTED';
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'TEAM';
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS deadline DATE;
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS completion_pct NUMERIC(5,2) NOT NULL DEFAULT 0;
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS blocked_reason TEXT DEFAULT '';
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS goals_team_status_idx ON goals(team_id, goal_status);
+CREATE INDEX IF NOT EXISTS goals_team_priority_idx ON goals(team_id, priority);
+CREATE INDEX IF NOT EXISTS goals_owner_idx ON goals(owner_id);
+CREATE INDEX IF NOT EXISTS goals_deadline_idx ON goals(deadline);
 
 CREATE TABLE IF NOT EXISTS goal_achievements (
   id           SERIAL PRIMARY KEY,
@@ -150,6 +174,61 @@ CREATE TABLE IF NOT EXISTS escalation_events (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS team_goal_milestones (
+  id SERIAL PRIMARY KEY,
+  goal_id INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  due_date DATE,
+  milestone_status TEXT NOT NULL DEFAULT 'NOT_STARTED'
+    CHECK (milestone_status IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'ARCHIVED')),
+  progress_pct NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (progress_pct >= 0 AND progress_pct <= 100),
+  priority TEXT NOT NULL DEFAULT 'MEDIUM' CHECK (priority IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+  assignee_id INTEGER REFERENCES users(id),
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS team_goal_milestones_goal_idx ON team_goal_milestones(goal_id);
+CREATE INDEX IF NOT EXISTS team_goal_milestones_status_idx ON team_goal_milestones(milestone_status);
+
+CREATE TABLE IF NOT EXISTS team_goal_contributions (
+  id SERIAL PRIMARY KEY,
+  goal_id INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+  member_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  contribution_pct NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (contribution_pct >= 0 AND contribution_pct <= 100),
+  contribution_note TEXT DEFAULT '',
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(goal_id, member_id)
+);
+
+CREATE TABLE IF NOT EXISTS goal_activity_log (
+  id SERIAL PRIMARY KEY,
+  goal_id INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+  team_id INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  activity_type TEXT NOT NULL,
+  detail JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS goal_activity_log_goal_idx ON goal_activity_log(goal_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS goal_activity_log_team_idx ON goal_activity_log(team_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  category TEXT NOT NULL DEFAULT 'TEAM_GOAL',
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  payload JSONB DEFAULT '{}'::jsonb,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS notifications_user_created_idx ON notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS notifications_user_unread_idx ON notifications(user_id, read_at);
+
 CREATE TABLE IF NOT EXISTS ai_telemetry (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     total_requests INTEGER NOT NULL DEFAULT 0,
@@ -182,6 +261,10 @@ ALTER TABLE thrust_areas    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teams           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE team_members    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE team_join_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE team_goal_milestones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE team_goal_contributions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE goal_activity_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_telemetry    ENABLE ROW LEVEL SECURITY;
 
 -- Normalize older tables created by previous script versions
@@ -240,6 +323,18 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'allow_all_ai_telemetry') THEN
     CREATE POLICY allow_all_ai_telemetry ON ai_telemetry FOR ALL USING (true) WITH CHECK (true);
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'allow_all_team_goal_milestones') THEN
+    CREATE POLICY allow_all_team_goal_milestones ON team_goal_milestones FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'allow_all_team_goal_contributions') THEN
+    CREATE POLICY allow_all_team_goal_contributions ON team_goal_contributions FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'allow_all_goal_activity_log') THEN
+    CREATE POLICY allow_all_goal_activity_log ON goal_activity_log FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'allow_all_notifications') THEN
+    CREATE POLICY allow_all_notifications ON notifications FOR ALL USING (true) WITH CHECK (true);
+  END IF;
 END $$;
 
 -- STEP 3: Seed demo data
@@ -261,6 +356,10 @@ DECLARE
   cycle_row RECORD;
   tpl_row RECORD;
 BEGIN
+  DELETE FROM team_goal_contributions;
+  DELETE FROM team_goal_milestones;
+  DELETE FROM goal_activity_log;
+  DELETE FROM notifications;
   DELETE FROM shared_goals;
   DELETE FROM escalation_events;
   DELETE FROM escalation_rules;

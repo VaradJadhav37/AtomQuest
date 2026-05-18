@@ -16,7 +16,6 @@ export interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null;
   role: Role;
-  setRole: (r: Role) => void; // demo role switcher
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   isLoading: boolean;
@@ -76,8 +75,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     syncUser();
 
+    const handleUnauthorized = () => {
+      setUser(null);
+      setRole('EMPLOYEE');
+    };
+
+    window.addEventListener('gk_unauthorized', handleUnauthorized);
+
     return () => {
       cancelled = true;
+      window.removeEventListener('gk_unauthorized', handleUnauthorized);
     };
   }, [clerkUser, isLoaded, isSignedIn]);
 
@@ -100,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clerk.signOut();
   };
 
-  const value = useMemo(() => ({ user, role, setRole, login, logout, isLoading }), [user, role, login, logout, isLoading]);
+  const value = useMemo(() => ({ user, role, login, logout, isLoading }), [user, role, login, logout, isLoading]);
 
   return (
     <AuthContext.Provider value={value}>

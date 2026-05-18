@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { SignInButton, SignUpButton } from '@clerk/react';
+
 import { Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -29,28 +29,6 @@ function SmallLogo() {
   );
 }
 
-function BrandOrbit() {
-  return (
-    <div className="login-orbit-wrap" aria-hidden="true">
-      <div className="login-orbit login-orbit-outer" />
-      <div className="login-orbit login-orbit-inner" />
-      <div className="login-orbit-node login-orbit-node-a" />
-      <div className="login-orbit-node login-orbit-node-b" />
-      <div className="login-orbit-node login-orbit-node-c" />
-      <div className="login-monogram">G</div>
-    </div>
-  );
-}
-
-function FloatingStat({ label, value, tone, delay }: { label: string; value: string; tone: string; delay: number }) {
-  return (
-    <div className="login-float-card" style={{ animationDelay: `${delay}s`, borderColor: `${tone}26` }}>
-      <div className="login-float-value" style={{ color: tone }}>{value}</div>
-      <div className="login-float-label">{label}</div>
-    </div>
-  );
-}
-
 type AuthMode = 'sign-in' | 'sign-up';
 
 export default function Login({ mode = 'sign-in' }: { mode?: AuthMode }) {
@@ -67,7 +45,6 @@ export default function Login({ mode = 'sign-in' }: { mode?: AuthMode }) {
     { role: 'Admin', email: 'admin@goalkeeper.com' },
   ];
   const activeRole = demoAccounts.find(acc => acc.email === email)?.role ?? null;
-  const clerkActionLabel = mode === 'sign-in' ? 'Sign in with Clerk' : 'Sign up with Clerk';
   const footerPrompt = mode === 'sign-in' ? "Don't have an account?" : 'Already have an account?';
   const footerLinkLabel = mode === 'sign-in' ? 'Sign up' : 'Sign in';
   const footerLinkTo = mode === 'sign-in' ? '/sign-up' : '/login';
@@ -114,12 +91,7 @@ export default function Login({ mode = 'sign-in' }: { mode?: AuthMode }) {
           </p>
         </div>
 
-        <div className="login-hero-visual anim-login-rise" style={{ animationDelay: '0.16s' }}>
-          <BrandOrbit />
-          <FloatingStat label="Approval flow" value="Clerk + Demo" tone="#2563eb" delay={0.2} />
-          <FloatingStat label="Check-ins" value="Tracked" tone="#16a34a" delay={0.35} />
-          <FloatingStat label="Access" value="Ready" tone="#8b5cf6" delay={0.5} />
-        </div>
+
       </section>
 
       <section className="login-panel anim-login-enter">
@@ -133,20 +105,6 @@ export default function Login({ mode = 'sign-in' }: { mode?: AuthMode }) {
             <h2>{mode === 'sign-in' ? 'Sign in' : 'Create account'}</h2>
             <p>{mode === 'sign-in' ? 'Use one of the seeded demo accounts below to enter the app fast.' : 'Use one of the seeded demo accounts below or create a new account.'}</p>
           </div>
-
-          {mode === 'sign-in' ? (
-            <SignInButton mode="modal">
-              <button type="button" className="login-clerk-launch">
-                {clerkActionLabel}
-              </button>
-            </SignInButton>
-          ) : (
-            <SignUpButton mode="modal">
-              <button type="button" className="login-clerk-launch">
-                {clerkActionLabel}
-              </button>
-            </SignUpButton>
-          )}
 
           <div className="login-role-grid">
             {demoAccounts.map((acc, index) => (

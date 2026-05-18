@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import sitePrevImg from '../../SITEPREV.jpeg';
 import { useAuth } from '../context/AuthContext';
 import {
   ShieldCheck,
@@ -151,24 +152,24 @@ export default function Home() {
         <section className="bt-pink-section" id="workflow">
           <div className="bt-container bt-pink-grid">
             <div className="bt-pink-content anim-fade-up">
-              <h2>Built for the actual goal cycle: create, review, check in, and report.</h2>
+              <h2>Built for the modern goal cycle: dual budgets, shared tracking, and clear reviews.</h2>
               <div className="bt-pink-list">
                 <div className="bt-pink-list-item anim-fade-up anim-delay-1">
                   <Activity size={20} />
-                  <p><strong>Create a goal sheet:</strong> Add goals with target value, weightage, and thrust area before submission.</p>
+                  <p><strong>Dual-Budget Pools:</strong> Track Individual and Team goals in completely separate 100% capacity pools without overlap.</p>
+                </div>
+                <div className="bt-pink-list-item">
+                  <Globe size={20} />
+                  <p><strong>Team Shared Goals:</strong> Managers can instantly assign shared goals to an entire team, with automatic actuals syncing.</p>
                 </div>
                 <div className="bt-pink-list-item">
                   <CheckCircle2 size={20} />
-                  <p><strong>Review with managers:</strong> Approve or reject direct reports' sheets and leave clear comments.</p>
-                </div>
-                <div className="bt-pink-list-item">
-                  <Zap size={20} />
-                  <p><strong>Check in on progress:</strong> Capture actuals, status, and context so the team can stay aligned.</p>
+                  <p><strong>Manager Reviews:</strong> Approve or reject direct reports' goal sheets to ensure total alignment.</p>
                 </div>
               </div>
             </div>
             <div className="bt-pink-image-wrap anim-fade-up anim-delay-2">
-              <img src="/dashboard.webp" alt="GoalKeeper dashboard" />
+              <img src={sitePrevImg} alt="GoalKeeper dashboard preview" />
             </div>
           </div>
         </section>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -23,22 +23,28 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, role, logout } = useAuth();
+  const userRole = (role || 'EMPLOYEE').toUpperCase();
   const { teams, activeTeamId, setActiveTeamId, isLoading: teamsLoading } = useTeamContext();
-
-  // Menu states
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isMobileManageOpen, setIsMobileManageOpen] = useState(false);
-  const [isMobileAdminOpen, setIsMobileAdminOpen] = useState(false);
-
-  const handleLogout = () => { 
-    logout(); 
-    setIsMobileMenuOpen(false);
-    navigate('/login'); 
-  };
 
   // Determine active state for dropdown triggers based on active routes
   const isManageActive = ['/manager/teams', '/analytics', '/reports'].some(path => location.pathname.startsWith(path));
   const isAdminActive = ['/admin/users', '/org-alignment'].some(path => location.pathname.startsWith(path));
+
+  // Menu states
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileManageOpen, setIsMobileManageOpen] = useState(isManageActive);
+  const [isMobileAdminOpen, setIsMobileAdminOpen] = useState(isAdminActive);
+
+  // Keep mobile menus synced with route changes
+  useEffect(() => {
+    setIsMobileManageOpen(isManageActive);
+    setIsMobileAdminOpen(isAdminActive);
+  }, [isManageActive, isAdminActive]);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: '#f8f9fb' }}>
@@ -88,7 +94,7 @@ export default function AppLayout() {
               <span className="nav-label">My Goals</span>
             </NavLink>
             
-            {(role === 'MANAGER' || role === 'ADMIN') && (
+            {(userRole === 'MANAGER' || userRole === 'ADMIN') && (
               <NavLink to="/team" className="app-nav-item">
                 <Users size={16} /> 
                 <span className="nav-label">Team Goals</span>
@@ -96,7 +102,7 @@ export default function AppLayout() {
             )}
 
             {/* "Manage" Dropdown */}
-            {(role === 'MANAGER' || role === 'ADMIN') && (
+            {(userRole === 'MANAGER' || userRole === 'ADMIN') && (
               <div className="nav-dropdown">
                 <button className={`nav-dropdown-trigger ${isManageActive ? 'active' : ''}`}>
                   <Briefcase size={16} />
@@ -121,7 +127,7 @@ export default function AppLayout() {
             )}
 
             {/* "Admin" Dropdown */}
-            {role === 'ADMIN' && (
+            {userRole === 'ADMIN' && (
               <div className="nav-dropdown">
                 <button className={`nav-dropdown-trigger ${isAdminActive ? 'active' : ''}`}>
                   <UserCheck size={16} />
@@ -145,7 +151,7 @@ export default function AppLayout() {
 
         {/* Right: Desktop User Profile & Sign Out */}
         <div className="app-layout-right" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          {(role === 'MANAGER' || role === 'ADMIN') && (
+          {(userRole === 'MANAGER' || userRole === 'ADMIN') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: '#64748b', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>Team:</span>
               <div className="premium-select-wrap" style={{ minWidth: '150px' }}>
@@ -170,14 +176,14 @@ export default function AppLayout() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(15, 23, 42, 0.02)', padding: '5px 12px', borderRadius: '999px', border: '1px solid rgba(226, 232, 240, 0.5)' }}>
             <div className="app-layout-user-info" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: '1.2' }}>
               <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', fontFamily: SANS }}>{user?.name || 'Guest'}</div>
-              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b', fontFamily: SANS, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{role.toLowerCase()}</div>
+              <div style={{ fontSize: '10px', fontWeight: '600', color: '#64748b', fontFamily: SANS, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{userRole.toLowerCase()}</div>
             </div>
             <div style={{ 
               width: '30px', 
               height: '30px', 
               borderRadius: '50%', 
-              background: role === 'ADMIN' ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : role === 'MANAGER' ? 'linear-gradient(135deg, #eff6ff, #bfdbfe)' : 'linear-gradient(135deg, #f0fdf4, #bbf7d0)', 
-              color: role === 'ADMIN' ? '#b45309' : role === 'MANAGER' ? '#1d4ed8' : '#15803d', 
+              background: userRole === 'ADMIN' ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : userRole === 'MANAGER' ? 'linear-gradient(135deg, #eff6ff, #bfdbfe)' : 'linear-gradient(135deg, #f0fdf4, #bbf7d0)', 
+              color: userRole === 'ADMIN' ? '#b45309' : userRole === 'MANAGER' ? '#1d4ed8' : '#15803d', 
               display: 'flex', 
               alignItems: 'center', 
               justifyContent: 'center', 
@@ -255,7 +261,7 @@ export default function AppLayout() {
           <div className="app-mobile-drawer-body">
             
             {/* Team Switcher if manager/admin */}
-            {(role === 'MANAGER' || role === 'ADMIN') && (
+            {(userRole === 'MANAGER' || userRole === 'ADMIN') && (
               <div style={{ marginBottom: '20px', padding: '0 8px' }}>
                 <div style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', color: '#64748b', letterSpacing: '0.05em', marginBottom: '8px' }}>Active Team</div>
                 <div className="premium-select-wrap" style={{ width: '100%' }}>
@@ -299,7 +305,7 @@ export default function AppLayout() {
                 <span>My Goals</span>
               </NavLink>
 
-              {(role === 'MANAGER' || role === 'ADMIN') && (
+              {(userRole === 'MANAGER' || userRole === 'ADMIN') && (
                 <NavLink 
                   to="/team" 
                   className="app-mobile-nav-item" 
@@ -311,7 +317,7 @@ export default function AppLayout() {
               )}
 
               {/* Collapsible Manage */}
-              {(role === 'MANAGER' || role === 'ADMIN') && (
+              {(userRole === 'MANAGER' || userRole === 'ADMIN') && (
                 <div className="app-mobile-collapsible">
                   <button 
                     className={`app-mobile-collapsible-trigger ${isMobileManageOpen || isManageActive ? 'active' : ''}`}
@@ -342,7 +348,7 @@ export default function AppLayout() {
               )}
 
               {/* Collapsible Admin */}
-              {role === 'ADMIN' && (
+              {userRole === 'ADMIN' && (
                 <div className="app-mobile-collapsible">
                   <button 
                     className={`app-mobile-collapsible-trigger ${isMobileAdminOpen || isAdminActive ? 'active' : ''}`}
@@ -394,7 +400,7 @@ export default function AppLayout() {
                   {user?.name || 'Guest'}
                 </span>
                 <span style={{ fontSize: '10px', fontWeight: '700', color: '#64748b', fontFamily: SANS, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-                  {role.toLowerCase()}
+                  {userRole.toLowerCase()}
                 </span>
               </div>
             </div>

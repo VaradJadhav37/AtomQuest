@@ -62,13 +62,22 @@ async function getPreviousCycle(currentCycle) {
 }
 
 async function fetchCoreData(cycle) {
+  let auditQuery = supabase.from('audit_log').select('id, user_id, action, entity, entity_id, detail, ts').order('ts', { ascending: false });
+  if (cycle?.open_date) {
+    auditQuery = auditQuery.gte('ts', `${cycle.open_date}T00:00:00Z`);
+  }
+  if (cycle?.close_date) {
+    auditQuery = auditQuery.lte('ts', `${cycle.close_date}T23:59:59Z`);
+  }
+  auditQuery = auditQuery.limit(500);
+
   const [usersRes, sheetsRes, goalsRes, achievementsRes, checkinsRes, auditsRes, cyclesRes] = await Promise.all([
     supabase.from('users').select('id, name, email, role, department, manager_id, created_at'),
     supabase.from('goal_sheets').select('id, employee_id, cycle_id, status, locked_at, created_at, version'),
     supabase.from('goals').select('id, goal_sheet_id, title, uom_type, target_value, weightage, thrust_area, description, created_at'),
     supabase.from('goal_achievements').select('id, goal_id, cycle_id, actual_value, score, submitted_at'),
     supabase.from('check_ins').select('id, goal_id, cycle_id, status, employee_comment, manager_comment, employee_submitted_at, manager_submitted_at'),
-    supabase.from('audit_log').select('id, user_id, action, entity, entity_id, detail, ts').order('ts', { ascending: false }).limit(250),
+    auditQuery,
     supabase.from('cycles').select('*').order('year', { ascending: false }).order('quarter', { ascending: false }).limit(8),
   ]);
 
@@ -103,39 +112,52 @@ router.get('/completion', requireAuth, requireManagerOrAdmin, async (req, res) =
     const { data: cycle } = await supabase.from('cycles').select('*').eq('status', 'OPEN').order('year', { ascending: false }).limit(1).maybeSingle();
     if (!cycle) return res.json({ totalEmployees: 0, sheets: [], cycle: null, summary: {} });
 
-    const { data: employees } = await supabase.from('users').select('id, name, email, department').eq('role', 'EMPLOYEE');
-    const { data: sheetsForCycle } = await supabase.from('goal_sheets').select('*').eq('cycle_id', cycle.id);
+    // Bulk-fetch everything in parallel — eliminates the N+1 pattern
+    const [{ data: employees }, { data: sheets }, { data: allGoals }, { data: allAchievements }] = await Promise.all([
+      supabase.from('users').select('id, name, email, department').eq('role', 'EMPLOYEE'),
+      supabase.from('goal_sheets').select('*').eq('cycle_id', cycle.id),
+      supabase.from('goals').select('id, goal_sheet_id, weightage'),
+      supabase.from('goal_achievements').select('goal_id, score').eq('cycle_id', cycle.id),
+    ]);
 
-    const stats = await Promise.all((employees || []).map(async emp => {
-      const { data: sheet } = await supabase.from('goal_sheets').select('*').eq('employee_id', emp.id).eq('cycle_id', cycle.id).maybeSingle();
-      const { data: goals } = sheet ? await supabase.from('goals').select('*').eq('goal_sheet_id', sheet.id) : { data: [] };
-      const { data: achievements } = goals?.length ? await supabase.from('goal_achievements').select('*').eq('cycle_id', cycle.id).in('goal_id', (goals || []).map(g => g.id)) : { data: [] };
+    // Build O(1) lookup maps
+    const sheetByEmployee = new Map((sheets || []).map(s => [s.employee_id, s]));
+    const goalsBySheet = new Map();
+    (allGoals || []).forEach(g => {
+      const list = goalsBySheet.get(g.goal_sheet_id) || [];
+      list.push(g);
+      goalsBySheet.set(g.goal_sheet_id, list);
+    });
+    const achievementsByGoal = new Map((allAchievements || []).map(a => [a.goal_id, a]));
 
-      const totalWeightage = (goals || []).reduce((s, g) => s + g.weightage, 0);
-      const weightedScore = (achievements || []).reduce((s, a) => {
-        const goal = (goals || []).find(g => g.id === a.goal_id);
-        return s + (a.score || 0) * (goal ? goal.weightage / 100 : 0);
+    const stats = (employees || []).map(emp => {
+      const sheet = sheetByEmployee.get(emp.id) || null;
+      const goals = sheet ? (goalsBySheet.get(sheet.id) || []) : [];
+      const totalWeightage = goals.reduce((s, g) => s + Number(g.weightage || 0), 0);
+      const achievements = goals.map(g => achievementsByGoal.get(g.id)).filter(Boolean);
+      const weightedScore = achievements.reduce((s, a) => {
+        const goal = goals.find(g => g.id === a.goal_id);
+        return s + (Number(a.score || 0)) * (goal ? Number(goal.weightage || 0) / 100 : 0);
       }, 0);
-
       return {
         employee: emp,
         sheetStatus: sheet?.status || 'NOT_STARTED',
-        goalsCount: (goals || []).length,
+        goalsCount: goals.length,
         totalWeightage,
-        achievementsCount: (achievements || []).length,
+        achievementsCount: achievements.length,
         overallScore: Math.round(weightedScore * 10) / 10,
-        checkInsComplete: (achievements || []).length === (goals || []).length && (goals || []).length > 0,
+        checkInsComplete: goals.length > 0 && achievements.length === goals.length,
       };
-    }));
+    });
 
     const summary = {
-      totalEmployees: (employees || []).length,
+      totalEmployees: stats.length,
       approved: stats.filter(s => s.sheetStatus === 'APPROVED').length,
       pending: stats.filter(s => s.sheetStatus === 'PENDING_APPROVAL').length,
       draft: stats.filter(s => s.sheetStatus === 'DRAFT').length,
       notStarted: stats.filter(s => s.sheetStatus === 'NOT_STARTED').length,
       checkInsComplete: stats.filter(s => s.checkInsComplete).length,
-      totalSheets: (sheetsForCycle || []).length,
+      totalSheets: (sheets || []).length,
     };
 
     res.json({ cycle, summary, employees: stats });
@@ -144,6 +166,7 @@ router.get('/completion', requireAuth, requireManagerOrAdmin, async (req, res) =
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // GET /api/admin/dashboard-metrics — REAL metrics for the Overview dashboard
 router.get('/dashboard-metrics', requireAuth, async (req, res) => {
@@ -603,10 +626,17 @@ router.post('/escalations/evaluate', requireAuth, requireAdmin, async (req, res)
     
     let newEvents = 0;
     
+    const demoMode = req.query.demo === '1';
+    
     // Evaluate rules
     for (const sheet of sheets || []) {
       const created = new Date(sheet.created_at);
-      const daysOld = Math.floor((new Date() - created) / (1000 * 60 * 60 * 24));
+      let daysOld = Math.floor((new Date() - created) / (1000 * 60 * 60 * 24));
+      
+      if (demoMode) {
+        // Artificially age the sheets by 14 days to ensure triggers fire during hackathon demos
+        daysOld += 14;
+      }
 
       for (const rule of rules) {
         let trigger = false;
@@ -639,6 +669,21 @@ router.post('/escalations/evaluate', requireAuth, requireAdmin, async (req, res)
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// POST /api/admin/seed-reset
+router.post('/seed-reset', requireAuth, requireAdmin, (req, res) => {
+  const { exec } = require('child_process');
+  const path = require('path');
+  const seedScript = path.join(__dirname, '..', 'seed.js');
+  
+  exec(`node "${seedScript}"`, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`Error executing seed: ${error.message}`);
+      return res.status(500).json({ error: 'Failed to reset database' });
+    }
+    res.json({ message: 'Database reset successfully' });
+  });
 });
 
 // GET /api/admin/thrust-areas

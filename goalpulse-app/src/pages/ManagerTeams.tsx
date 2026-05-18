@@ -72,7 +72,7 @@ export default function ManagerTeams() {
 
       {isLoading ? (
         <div style={gridStyle}>
-          {[1, 2, 3].map(i => <div key={i} style={skeletonCard} />)}
+          {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ ...skeletonCard, background: undefined }} />)}
         </div>
       ) : (
         <div style={gridStyle}>

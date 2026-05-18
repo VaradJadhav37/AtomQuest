@@ -2,8 +2,13 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 16) {
+  throw new Error('JWT_SECRET must be set to a strong value (min 16 chars)');
+}
 
 const allowedOrigins = new Set(
   String(process.env.CORS_ORIGINS || '')
@@ -24,16 +29,57 @@ const corsOptions = {
   origin(origin, callback) {
     if (!origin) return callback(null, true);
     if (allowedOrigins.has(origin)) return callback(null, true);
-    return callback(null, true);
+    return callback(new Error('Origin not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-goalkeeper-email'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-goalkeeper-email', 'x-csrf-token'],
 };
 
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
-app.use(express.json());
+
+// ── Security headers ──────────────────────────────────────────────────────
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+
+// ── Rate limiting ──────────────────────────────────────────────────────────
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+  skip: (req) => req.path === '/health',
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.AI_RATE_LIMIT || 50),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'AI rate limit exceeded. Please wait before retrying.' },
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+});
+
+app.use(globalLimiter);
+app.use(express.json({ limit: '1mb' }));
+app.use((req, res, next) => {
+  const method = String(req.method || '').toUpperCase();
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const csrf = req.headers['x-csrf-token'];
+    const origin = req.headers.origin;
+    if (origin && !allowedOrigins.has(origin)) return res.status(403).json({ error: 'Invalid origin' });
+    if (!csrf || String(csrf).trim().length < 12) return res.status(403).json({ error: 'Missing/invalid CSRF token' });
+  }
+  next();
+});
 app.get('/', (req, res) => {
   res.json({
     service: 'GoalKeeper API',
@@ -45,17 +91,19 @@ app.get('/', (req, res) => {
 
 // ── Routes ────────────────────────────────────────────────────────────────
 const { router: authRouter } = require('./routes/auth');
+app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth', authRouter);
 app.use('/api/cycles', require('./routes/cycles'));
-app.use('/api/goal-sheets', require('./routes/goals'));
+app.use('/api/goal-sheets', require('./routes/goalSheets'));
 app.use('/api/goals', require('./routes/goals'));
 app.use('/api/checkins', require('./routes/checkins'));
 app.use('/api/team', require('./routes/team'));
 app.use('/api/teams', require('./routes/teams'));
 app.use('/api/v1/teams', require('./routes/teams'));
 app.use('/api/admin', require('./routes/admin'));
-app.use('/api/ai', require('./routes/ai'));
+app.use('/api/ai', aiLimiter, require('./routes/ai'));
 app.use('/api/reports', require('./routes/reports'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // ── Health ────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -83,19 +131,24 @@ function collectRoutes(stack, prefix = '') {
   return routes;
 }
 
-app.get('/api/debug/routes', (req, res) => {
-  const stack = app._router?.stack || app.router?.stack || [];
-  const routes = collectRoutes(stack);
-
-  res.json({
-    service: 'GoalKeeper API',
-    pid: process.pid,
-    node: process.version,
-    env: process.env.NODE_ENV || 'development',
-    routeCount: routes.length,
-    routes,
+// ── Debug routes (development only) ─────────────────────────────────────
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/api/debug/routes', (req, res) => {
+    const stack = app._router?.stack || app.router?.stack || [];
+    const routes = collectRoutes(stack);
+    res.json({
+      service: 'GoalKeeper API',
+      pid: process.pid,
+      node: process.version,
+      env: process.env.NODE_ENV || 'development',
+      routeCount: routes.length,
+      routes,
+    });
   });
-});
+} else {
+  // In production, return 404 for this endpoint
+  app.get('/api/debug/routes', (req, res) => res.status(404).json({ error: 'Not found' }));
+}
 
 app.use((req, res) => res.status(404).json({ error: `${req.method} ${req.path} not found` }));
 

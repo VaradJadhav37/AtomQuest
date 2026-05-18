@@ -103,7 +103,7 @@ export default function AdminReports() {
   });
 
   const runEvaluator = useMutation({
-    mutationFn: () => api.post('/api/admin/escalations/evaluate'),
+    mutationFn: () => api.post('/api/admin/escalations/evaluate?demo=1'),
     onSuccess: (res) => {
       alert(`Evaluator run complete. ${res.data.newEvents} new events generated.`);
       qc.invalidateQueries({ queryKey: ['escalations'] });
@@ -124,17 +124,9 @@ export default function AdminReports() {
   });
 
   const downloadCSV = () => {
-    const url = new URL(`${api.defaults.baseURL}/api/admin/report`);
-    url.searchParams.set('format', 'csv');
-    fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem('gp_token') || ''}`,
-      },
-    })
-      .then(async response => {
-        if (!response.ok) throw new Error('CSV export failed');
-        const blob = await response.blob();
-        const downloadUrl = URL.createObjectURL(blob);
+    api.get('/api/admin/report?format=csv', { responseType: 'blob' })
+      .then(response => {
+        const downloadUrl = URL.createObjectURL(response.data);
         const a = document.createElement('a');
         a.href = downloadUrl;
         a.download = `GoalKeeper_Report_${reportData?.cycle?.name || 'export'}.csv`;
@@ -176,13 +168,9 @@ export default function AdminReports() {
             <Download size={15} /> Export CSV
           </button>
           <button onClick={() => {
-            const url = new URL(`${api.defaults.baseURL}/api/admin/report`);
-            url.searchParams.set('format', 'xlsx');
-            fetch(url.toString(), { headers: { Authorization: `Bearer ${localStorage.getItem('gp_token') || ''}` } })
-              .then(async response => {
-                if (!response.ok) throw new Error('XLSX export failed');
-                const blob = await response.blob();
-                const downloadUrl = URL.createObjectURL(blob);
+            api.get('/api/admin/report?format=xlsx', { responseType: 'blob' })
+              .then(response => {
+                const downloadUrl = URL.createObjectURL(response.data);
                 const a = document.createElement('a');
                 a.href = downloadUrl;
                 a.download = `GoalKeeper_Report_${reportData?.cycle?.name || 'export'}.xlsx`;
@@ -570,8 +558,8 @@ function SearchResultCard({ title, items, loading, renderItem }: any) {
 
 function LoadingState() {
   return (
-    <div style={{ padding: '28px 32px' }}>
-      {[1, 2, 3, 4].map(i => <div key={i} style={{ height: '80px', background: '#f3f4f6', borderRadius: '12px', marginBottom: '14px' }} />)}
+    <div className="page-container fade-in" style={{ padding: '28px 32px' }}>
+      {[1, 2, 3, 4].map(i => <div key={i} className="skeleton" style={{ height: '120px', borderRadius: '16px', marginBottom: '24px' }} />)}
     </div>
   );
 }

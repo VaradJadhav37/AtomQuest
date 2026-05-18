@@ -1,6 +1,6 @@
 // GoalWizard.tsx — Create/Edit goal with AI coach
 import React, { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Sparkles, X } from 'lucide-react';
 import api from '../lib/api';
 import { UOM_TYPES, normalizeUomType, uomPlaceholder } from '../lib/uom';
@@ -14,11 +14,26 @@ interface Props {
   onSave: () => void;
   remainingWeightage: number;
   editGoal?: any;
+  teamId?: string | number;
+  teamGoalMode?: boolean;
+  members?: any[];
 }
 
-export default function GoalWizard({ onClose, onSave, remainingWeightage, editGoal }: Props) {
-  const { role } = useAuth();
+export default function GoalWizard({ onClose, onSave, remainingWeightage, editGoal, teamId, teamGoalMode = false, members = [] }: Props) {
+  const { user, role } = useAuth();
   const { teams, activeTeamId } = useTeamContext();
+
+  const [selectedOwnerId, setSelectedOwnerId] = useState<number>(
+    editGoal?.owner_id || user?.id || 0
+  );
+
+  // Fetch the selected owner's active sheet to dynamically validate remaining weightage
+  const { data: ownerSheetData } = useQuery({
+    queryKey: ['sheetForEmployee', selectedOwnerId],
+    queryFn: () => api.get(`/api/goal-sheets/employee/${selectedOwnerId}`).then(r => r.data),
+    enabled: !!selectedOwnerId && (role === 'MANAGER' || role === 'ADMIN' || selectedOwnerId === user?.id),
+  });
+
   const [form, setForm] = useState({
     title: editGoal?.title || '',
     uom_type: normalizeUomType(editGoal?.uom_type),
@@ -34,12 +49,30 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
   const [rewriteRationale, setRewriteRationale] = useState('');
   const [rewriteLoading, setRewriteLoading] = useState(false);
   const [error, setError] = useState('');
-  const availableWeightage = Math.max(0, remainingWeightage);
+
+  const ownerSheetGoals = ownerSheetData?.sheet?.goals || [];
+  // Calculate total weightage excluding the current editing goal
+  const ownerCurrentTotalWeightage = ownerSheetGoals
+    .filter((g: any) => !editGoal || Number(g.id) !== Number(editGoal.id))
+    .reduce((sum: number, g: any) => sum + Number(g.weightage || 0), 0);
+
+  const dynamicRemainingWeightage = teamGoalMode
+    ? Math.min(remainingWeightage, Math.max(0, 100 - ownerCurrentTotalWeightage))
+    : remainingWeightage;
+
+  const availableWeightage = Math.max(0, dynamicRemainingWeightage);
   const weightageMax = availableWeightage >= 10 ? availableWeightage : undefined;
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      const payload = { ...form, uom_type: normalizeUomType(form.uom_type), weightage: Number(form.weightage), team_id: form.team_id ? Number(form.team_id) : null };
+      const payload = { ...form, uom_type: normalizeUomType(form.uom_type), weightage: Number(form.weightage), team_id: form.team_id ? Number(form.team_id) : null, owner_id: teamGoalMode ? selectedOwnerId : null };
+      const resolvedTeamId = Number(teamId || form.team_id || 0);
+      if (teamGoalMode && resolvedTeamId > 0) {
+        if (editGoal) {
+          return api.patch(`/api/teams/${resolvedTeamId}/goals/${editGoal.id}`, payload);
+        }
+        return api.post(`/api/teams/${resolvedTeamId}/goals`, payload);
+      }
       if (editGoal) {
         return api.patch(`/api/goals/${editGoal.id}`, payload);
       }
@@ -73,10 +106,15 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
     setRewriteRationale('');
 
     try {
-      const response = await fetch(`${api.defaults.baseURL}/api/ai/rewrite-goal?stream=1`, {
+      const baseUrl =
+        localStorage.getItem('gk_api_base_url') ||
+        import.meta.env.VITE_API_BASE_URL ||
+        'http://localhost:3001';
+      const response = await fetch(`${baseUrl}/api/ai/rewrite-goal?stream=1`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('gp_token') || ''}`,
+          Authorization: `Bearer ${localStorage.getItem('gk_token') || ''}`,
+          'x-csrf-token': localStorage.getItem('gk_csrf_token') || `${Date.now()}_${Math.random().toString(36).slice(2)}`,
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
         },
@@ -112,14 +150,9 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
             }
             if (event.type === 'done' && event.goal) {
               const nextTitle = event.goal.title || form.title;
-              const nextDescription = event.goal.description || form.description;
               setRewritePreview(nextTitle);
               setRewriteRationale(event.goal.rationale || '');
-              setForm(current => ({
-                ...current,
-                title: nextTitle,
-                description: nextDescription,
-              }));
+              // We do NOT auto-apply the rewrite. We wait for the user to click 'Apply Rewrite'
             }
           }
         }
@@ -248,28 +281,50 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
                     onChange={e => setForm(f => ({ ...f, weightage: e.target.value }))} placeholder="e.g. 40" style={inputStyle} />
                   {weightageMax === undefined && (
                     <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '6px', fontFamily: "'Inter', system-ui, sans-serif" }}>
-                      {remainingWeightage < 0
-                        ? `This sheet is overallocated by ${Math.abs(remainingWeightage)}%. Reduce other goals first.`
-                        : 'This sheet has less than 10% available weightage. Lower another goal first.'}
+                      {dynamicRemainingWeightage < 0
+                        ? `This sheet/team is overallocated. Reduce other goals first.`
+                        : 'This sheet/team has less than 10% available weightage. Lower another goal first.'}
                     </div>
                   )}
                 </div>
-                {(role === 'MANAGER' || role === 'ADMIN') && (
+                {teamGoalMode && (role === 'MANAGER' || role === 'ADMIN') ? (
                   <div style={{ gridColumn: '1 / -1' }}>
-                    <label style={labelStyle}>Assign to Team</label>
+                    <label style={labelStyle}>Assignee / Goal Owner *</label>
                     <select
-                      value={form.team_id}
-                      onChange={e => setForm(f => ({ ...f, team_id: e.target.value }))}
+                      value={selectedOwnerId}
+                      onChange={e => setSelectedOwnerId(Number(e.target.value))}
                       style={{ ...inputStyle }}
                     >
-                      <option value="">All Teams / Default Workspace</option>
-                      {teams.map(team => (
-                        <option key={team.id} value={String(team.id)}>
-                          {team.name}
+                      {!members.some((m: any) => Number(m.employee?.id) === Number(user?.id)) && user && (
+                        <option value={user.id}>
+                          {user.name} ({user.email}) [You]
+                        </option>
+                      )}
+                      {members.map((m: any) => (
+                        <option key={m.employee?.id} value={m.employee?.id}>
+                          {m.employee?.name} ({m.employee?.email})
                         </option>
                       ))}
                     </select>
                   </div>
+                ) : (
+                  (role === 'MANAGER' || role === 'ADMIN') && (
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={labelStyle}>Assign to Team</label>
+                      <select
+                        value={form.team_id}
+                        onChange={e => setForm(f => ({ ...f, team_id: e.target.value }))}
+                        style={{ ...inputStyle }}
+                      >
+                        <option value="">All Teams / Default Workspace</option>
+                        {teams.map(team => (
+                          <option key={team.id} value={String(team.id)}>
+                            {team.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )
                 )}
               </div>
 
@@ -327,7 +382,11 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
                 )}
                 <button
                   type="button"
-                  onClick={() => setForm(current => ({ ...current, title: rewritePreview, description: current.description || rewriteRationale }))}
+                  onClick={() => {
+                    setForm(current => ({ ...current, title: rewritePreview, description: current.description || rewriteRationale }));
+                    setRewritePreview('');
+                    setRewriteRationale('');
+                  }}
                   style={{
                     marginTop: 12,
                     padding: '8px 12px',

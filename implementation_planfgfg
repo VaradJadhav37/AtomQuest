@@ -1,0 +1,171 @@
+# GoalPulse Enterprise Hardening — Implementation Plan
+
+## Overview
+
+Full-stack audit of the AtomQuest / GoalKeeper codebase has been completed. The system is architecturally sound (React 18 + TypeScript + Vite + TailwindCSS + Node.js/Express + Supabase), but several critical gaps exist between the current prototype state and a production-grade, hackathon-winning enterprise SaaS. This plan addresses them in priority order.
+
+---
+
+## Critical Findings from Audit
+
+| Area | Issue | Severity |
+|---|---|---|
+| **Team Goals — Backend** | `GET /:teamId/goals` only fetches goals tagged with `team_id`. There is no dedicated endpoint to **create** a team-scoped goal. The existing `POST /api/goals` allows a `team_id` but has no enforcement that the caller is a team member. Team goals don't work end-to-end. | 🔴 Critical |
+| **Team Goals — Frontend** | `TeamDetail.tsx` Goals tab lists goals from the API but has zero UI to **create**, **edit**, or **delete** a team goal. The tab is entirely read-only. | 🔴 Critical |
+| **Admin `/completion` N+1** | `GET /api/admin/completion` runs nested `await` calls for every employee inside a `Promise.all`, causing N+1 sub-queries. 50 employees = 150+ Supabase round-trips per request. | 🔴 Critical |
+| **Missing route — Team Goals POST** | No `POST /api/teams/:teamId/goals` endpoint exists at all. | 🔴 Critical |
+| **Seed script reliability** | Seeder creates users but doesn't guarantee team + goal linkages, so the demo can start in a broken state with empty Team Goals tab. | 🟡 High |
+| **Security — Input Validation** | `POST /api/goals`, `POST /api/teams`, auth routes accept raw body values with no length guards or sanitization. XSS/injection risk via `title`, `description`, `name`. | 🟡 High |
+| **Rate Limiting — AI endpoints** | `/api/ai/*` has zero rate limiting. A user could exhaust the Groq quota mid-demo. | 🟡 High |
+| **AppLayout sidebar nav bug** | "Manager Teams" nav item is visible to EMPLOYEE role — it shouldn't be. | 🟡 High |
+| **Performance — `enrichTeams`** | Makes 3 sequential Supabase queries (teams → members → goals → achievements). Should be parallelized. | 🟠 Medium |
+| **UX — Empty states** | Team Goals tab shows nothing meaningful when empty. Reports and Analytics pages show raw spinners with no skeleton loaders. | 🟠 Medium |
+
+---
+
+## Proposed Changes
+
+### Phase 1 — Security + Performance (Low Risk, High Impact)
+
+#### [MODIFY] [index.js](file:///c:/Users/Varad/AtomQuest/goalpulse-api/src/index.js)
+
+- Add `express-rate-limit`:
+  - Global: 200 req / 15 min
+  - `/api/ai/*`: 20 req / 15 min (Groq quota protection — bump to 50 for demo if needed)
+  - `/api/auth/login`: 10 req / 15 min (brute-force protection)
+- Add `helmet()` for security headers (Content-Security-Policy, X-Frame-Options, etc.)
+
+#### [MODIFY] [admin.js](file:///c:/Users/Varad/AtomQuest/goalpulse-api/src/routes/admin.js)
+
+Fix `GET /completion` N+1:
+- Fetch all sheets + goals + achievements in 3 **bulk** queries wrapped in `Promise.all`
+- Build in-memory `Map` lookups indexed by `employee_id`
+- Eliminates ~140 Supabase calls per request (for a 50-user org)
+
+#### [MODIFY] [teams.js](file:///c:/Users/Varad/AtomQuest/goalpulse-api/src/routes/teams.js) — `enrichTeams`
+
+Parallelize the 4 sequential calls:
+```js
+// BEFORE (sequential — 4 round-trips in series)
+const memberRows = await supabase...
+const goals = await supabase...
+const achievements = await supabase...
+
+// AFTER (parallel — 2 round-trips total)
+const [memberRows, goals] = await Promise.all([supabase...members, supabase...goals]);
+const achievements = goals.length ? await supabase...achievements : [];
+```
+
+#### [MODIFY] [goals.js](file:///c:/Users/Varad/AtomQuest/goalpulse-api/src/routes/goals.js)
+
+- Add input length guards: title ≤ 200 chars, description ≤ 1000 chars, target_value ≤ 100 chars
+- Verify team membership explicitly when `team_id` is provided (403 if not a member or manager)
+
+---
+
+### Phase 2 — Team Goals Backend
+
+#### [MODIFY] [teams.js](file:///c:/Users/Varad/AtomQuest/goalpulse-api/src/routes/teams.js)
+
+**Add `POST /api/teams/:teamId/goals`**
+- Auth: caller must be an active member OR manager of the team
+- Finds/creates the caller's goal sheet for the active cycle
+- Enforces BRD: max 8 goals, min 10% weightage, 100% total cap
+- Inserts goal with `team_id` set for team-scoped queries
+
+**Add `PATCH /api/teams/:teamId/goals/:goalId`**
+- Validates ownership: goal must belong to the caller's goal sheet
+- Sheet must be in DRAFT or REJECTED status (not locked)
+- Updates title, description, target_value, weightage, thrust_area
+
+**Add `DELETE /api/teams/:teamId/goals/:goalId`**
+- Validates ownership
+- Sheet must not be APPROVED or PENDING_APPROVAL
+- Deletes goal, logs to audit_log
+
+---
+
+### Phase 3 — Team Goals Frontend
+
+#### [MODIFY] [TeamDetail.tsx](file:///c:/Users/Varad/AtomQuest/goalpulse-app/src/pages/TeamDetail.tsx)
+
+Transform the Goals tab from read-only to fully interactive:
+
+- **Create Team Goal button** → opens `GoalWizard` modal (already exists, just needs `team_id` prop wired through)
+- **Goal cards** replacing the bare table — each card shows:
+  - Goal title, thrust area badge, UoM, target value
+  - Owner name + avatar
+  - Achievement score progress bar (with color coding: green ≥80, amber ≥60, red <60)
+  - Check-in status badge (NOT_STARTED / ON_TRACK / COMPLETED)
+  - Delete button (only when sheet is not locked)
+- **Empty state** with icon + "No team goals yet. Click + Add Goal to get started."
+- **Optimistic UI** on delete (remove from list immediately, rollback on error)
+
+#### [MODIFY] [Dashboard.tsx](file:///c:/Users/Varad/AtomQuest/goalpulse-app/src/pages/Dashboard.tsx)
+
+- Add team goal progress indicators inside the "My Teams" section for employees:
+  - Show `goal_count` and `avg_progress` already returned by `/api/teams/my/summary`
+  - Mini progress bar per team membership card
+
+---
+
+### Phase 4 — UX & Layout Polish
+
+#### [MODIFY] [AppLayout.tsx](file:///c:/Users/Varad/AtomQuest/goalpulse-app/src/layouts/AppLayout.tsx)
+
+- **Fix nav visibility bug**: "Manager Teams" item must only show for `role === 'MANAGER' || role === 'ADMIN'`
+- **Pending approval badge**: on the "Team" nav item for managers, show a red dot if `pendingSheets > 0`
+- Ensure mobile breakpoint sidebar collapse works correctly
+
+#### [MODIFY] [Team.tsx](file:///c:/Users/Varad/AtomQuest/goalpulse-app/src/pages/Team.tsx)
+
+- Replace the bare `<div>` loading placeholders with animated skeleton cards (consistent with Dashboard)
+- Add optimistic UI on the Approve/Return actions (grey out the row immediately)
+
+---
+
+### Phase 5 — Demo Hardening
+
+#### [MODIFY] [seed.js](file:///c:/Users/Varad/AtomQuest/goalpulse-api/src/seed.js)
+
+- **Cycle dates**: Dynamically compute `open_date = today - 30 days`, `close_date = today + 60 days` so the cycle is always active
+- **Team seed**: Ensure 1 team with `manager_id = manager user's id` exists
+- **Team members**: Add at least 2 seeded employees to the team with `status = 'active'`
+- **Team goals**: Seed 3 goals with `team_id` set pointing to the seeded team, covering different thrust areas
+
+---
+
+## No Schema Migration Required
+
+The `goals` table already has a `team_id` column. The `team_members` and `team_join_requests` tables exist. All changes are **application-layer only** — no Supabase migrations needed.
+
+---
+
+## Verification Plan
+
+### API
+- `POST /api/teams/:id/goals` as employee → 201, goal created with correct `team_id`
+- `POST /api/teams/:id/goals` as non-member → 403
+- `GET /api/admin/completion` → response time < 500ms (vs. current ~3s for N+1)
+- 21st POST to `/api/ai/coach` in 15 min → 429 Too Many Requests
+
+### Frontend Walkthrough (Hackathon Demo Flow)
+1. Login as **EMPLOYEE** → Dashboard → "My Teams" shows team membership + goal count
+2. Navigate to a team page → Goals tab → click "+ Add Goal" → fill wizard → goal created
+3. Login as **MANAGER** → "Team Goals" page → employee's sheet visible → Approve
+4. Back as EMPLOYEE → Goal Sheet → Check-in → log actuals
+5. Manager → TeamDetail → Goals tab → goal shows progress bar with score
+6. Manager → Dashboard → Risk Radar updates with real data
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **Team Goal Ownership Model**: Should employees create their own team-scoped goals (current plan — self-assign via `team_id`), or should the manager push goals down to employees? The current architecture supports the self-assign model with no DB changes. The push model needs an `assigned_by` column and different RBAC logic.
+
+> [!IMPORTANT]
+> **AI Rate Limit for Demo**: 20 req/15 min on `/api/ai/*` is production-safe but potentially too low for a live judge demo with multiple concurrent users. Recommend 50 req/15 min for the hackathon environment.
+
+> [!NOTE]
+> **GoalWizard reuse for team goals**: The existing `GoalWizard` component already supports a `team_id` prop path through `POST /api/goals`. We can reuse it in TeamDetail by passing `teamId` and calling the new `POST /api/teams/:teamId/goals` endpoint, OR keep it calling `POST /api/goals` with `team_id` in the body. The latter requires less frontend change.

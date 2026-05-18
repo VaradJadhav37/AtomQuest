@@ -39,15 +39,12 @@ async function getOrCreateSheet(employeeId, cycleId) {
     .eq('employee_id', employeeId)
     .eq('cycle_id', cycleId)
     .maybeSingle();
-
   if (existing) return existing;
-
   const { data: created, error } = await supabase
     .from('goal_sheets')
     .insert({ employee_id: employeeId, cycle_id: cycleId, status: 'DRAFT' })
     .select()
     .single();
-
   if (error) throw error;
   return created;
 }
@@ -67,7 +64,9 @@ async function getSharedLinksByGoalId(goalId) {
 }
 
 function isSharedRecipient(goalId, sharedLinks) {
-  return (sharedLinks || []).some(link => Number(link.linked_goal_id) === Number(goalId) && Number(link.source_goal_id) !== Number(goalId));
+  return (sharedLinks || []).some(
+    link => Number(link.linked_goal_id) === Number(goalId) && Number(link.source_goal_id) !== Number(goalId)
+  );
 }
 
 async function getTeamById(teamId) {
@@ -83,49 +82,7 @@ async function canManageTeam(user, teamId) {
   return !!team && Number(team.manager_id) === Number(user.id) && team.is_active !== false;
 }
 
-async function enrichSheet(sheet) {
-  const goals = await getSheetGoals(sheet.id);
-  const { data: employee } = await supabase
-    .from('users')
-    .select('id, name, email, department')
-    .eq('id', sheet.employee_id)
-    .single();
-
-  const totalWeightage = goals.reduce((s, g) => s + Number(g.weightage || 0), 0);
-  return { ...sheet, goals, totalWeightage, employee };
-}
-
-// GET /api/goal-sheets/mine
-router.get('/mine', requireAuth, async (req, res) => {
-  try {
-    const cycle = await getCycle();
-    if (!cycle) return res.status(404).json({ error: 'No active cycle' });
-
-    const sheet = await getOrCreateSheet(req.user.id, cycle.id);
-    const enriched = await enrichSheet(sheet);
-    res.json({ cycle: { ...cycle, window: cycleWindowStatus(cycle) }, sheet: enriched });
-  } catch (err) {
-    console.error('GET /mine:', err);
-    res.status(err.status || 500).json({ error: err.message });
-  }
-});
-
-// GET /api/goal-sheets/:id
-router.get('/:id', requireAuth, async (req, res) => {
-  try {
-    const { data: sheet } = await supabase
-      .from('goal_sheets')
-      .select('*')
-      .eq('id', req.params.id)
-      .single();
-    if (!sheet) return res.status(404).json({ error: 'Sheet not found' });
-    res.json(await enrichSheet(sheet));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/goals â€” add goal to current sheet
+// POST /api/goals — add goal to current sheet
 router.post('/', requireAuth, async (req, res) => {
   try {
     const { title, uom_type, target_value, weightage, thrust_area, description, cycle_id, team_id } = req.body;
@@ -134,6 +91,9 @@ router.post('/', requireAuth, async (req, res) => {
     if (!title || !uom_type || !hasTarget || !hasWeight) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    if (String(title).length > 200) return res.status(400).json({ error: 'Title must be 200 characters or fewer' });
+    if (description && String(description).length > 1000) return res.status(400).json({ error: 'Description must be 1000 characters or fewer' });
+    if (String(target_value).length > 100) return res.status(400).json({ error: 'Target value must be 100 characters or fewer' });
 
     const normalizedUom = normalizeUomType(uom_type);
     const weight = Number(weightage);
@@ -145,8 +105,25 @@ router.post('/', requireAuth, async (req, res) => {
     if (!cycle) return res.status(400).json({ error: 'No active cycle' });
     ensureWindowOpen(cycle);
 
-    if (team_id && !(await canManageTeam(req.user, team_id))) {
-      return res.status(403).json({ error: 'You do not manage that team' });
+    if (team_id) {
+      if (req.user.role === 'ADMIN') {
+        // admins always allowed
+      } else if (req.user.role === 'MANAGER') {
+        if (!(await canManageTeam(req.user, team_id))) {
+          return res.status(403).json({ error: 'You do not manage that team' });
+        }
+      } else {
+        const { data: membership } = await supabase
+          .from('team_members')
+          .select('id')
+          .eq('team_id', Number(team_id))
+          .eq('employee_id', req.user.id)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (!membership) {
+          return res.status(403).json({ error: 'You are not an active member of that team' });
+        }
+      }
     }
 
     const sheet = await getOrCreateSheet(req.user.id, cycle.id);
@@ -159,20 +136,35 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `Maximum ${MAX_GOALS_PER_SHEET} goals per sheet` });
     }
 
-    const currentTotal = existingGoals.reduce((s, g) => s + Number(g.weightage || 0), 0);
-    if (currentTotal + weight > 100) {
-      return res.status(400).json({ error: `Weightage would exceed 100% (current: ${currentTotal}%)` });
+    if (team_id) {
+      // Team goal: validate against the employee's team goal pool (separate 100% budget)
+      const teamGoalPool = existingGoals.filter(g => g.team_id != null);
+      const teamTotal = teamGoalPool.reduce((s, g) => s + Number(g.weightage || 0), 0);
+      if (teamTotal + weight > 100) {
+        return res.status(400).json({
+          error: `Team goal weightage would exceed 100% (team pool current: ${teamTotal}%)`,
+        });
+      }
+    } else {
+      // Individual goal: validate against the employee's individual goal pool (separate 100% budget)
+      const individualGoalPool = existingGoals.filter(g => g.team_id == null);
+      const individualTotal = individualGoalPool.reduce((s, g) => s + Number(g.weightage || 0), 0);
+      if (individualTotal + weight > 100) {
+        return res.status(400).json({
+          error: `Individual goal weightage would exceed 100% (individual pool current: ${individualTotal}%)`,
+        });
+      }
     }
 
     const { data: goal, error } = await supabase.from('goals').insert({
       goal_sheet_id: sheet.id,
       team_id: team_id || null,
-      title,
+      title: String(title).trim(),
       uom_type: normalizedUom,
-      target_value: String(target_value),
+      target_value: String(target_value).trim(),
       weightage: weight,
       thrust_area: thrust_area || 'General',
-      description: description || '',
+      description: description ? String(description).trim() : '',
     }).select().single();
     if (error) throw error;
 
@@ -181,10 +173,7 @@ router.post('/', requireAuth, async (req, res) => {
       action: 'CREATED',
       entity: 'goal',
       entity_id: goal.id,
-      detail: JSON.stringify({
-        note: `Created goal ${title}`,
-        after: goal,
-      }),
+      detail: JSON.stringify({ note: `Created goal ${title}`, after: goal }),
     });
 
     res.status(201).json(goal);
@@ -194,13 +183,12 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/goals/shared â€” push a goal to multiple employees
+// POST /api/goals/shared — push a goal to multiple employees
 router.post('/shared', requireAuth, async (req, res) => {
   try {
     if (!['MANAGER', 'ADMIN'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Only managers can share goals' });
     }
-
     const { title, uom_type, target_value, weightage, thrust_area, description, employee_ids, cycle_id } = req.body;
     const hasTarget = target_value !== undefined && target_value !== null && String(target_value).trim() !== '';
     const hasWeight = weightage !== undefined && weightage !== null && String(weightage).trim() !== '';
@@ -226,6 +214,8 @@ router.post('/shared', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Primary owner weightage would exceed 100%' });
     }
 
+    const createdGoalIds = [];
+
     const { data: pGoal, error: pErr } = await supabase.from('goals').insert({
       goal_sheet_id: pSheet.id,
       title,
@@ -236,6 +226,7 @@ router.post('/shared', requireAuth, async (req, res) => {
       description: description || '',
     }).select().single();
     if (pErr) throw pErr;
+    createdGoalIds.push(pGoal.id);
 
     await supabase.from('shared_goals').insert({
       source_goal_id: pGoal.id,
@@ -244,42 +235,48 @@ router.post('/shared', requireAuth, async (req, res) => {
       primary_owner_id: primaryId,
     });
 
-    for (let i = 1; i < employee_ids.length; i++) {
-      const employeeId = employee_ids[i];
-      const lSheet = await getOrCreateSheet(employeeId, cycle.id);
-      const linkedGoals = await getSheetGoals(lSheet.id);
-      if (linkedGoals.length >= MAX_GOALS_PER_SHEET) {
-        return res.status(400).json({ error: `Employee ${employeeId} already has ${MAX_GOALS_PER_SHEET} goals` });
+    try {
+      for (let i = 1; i < employee_ids.length; i++) {
+        const employeeId = employee_ids[i];
+        const lSheet = await getOrCreateSheet(employeeId, cycle.id);
+        const linkedGoals = await getSheetGoals(lSheet.id);
+        if (linkedGoals.length >= MAX_GOALS_PER_SHEET) {
+          throw new Error(`Employee ${employeeId} already has ${MAX_GOALS_PER_SHEET} goals`);
+        }
+        if (linkedGoals.reduce((sum, g) => sum + Number(g.weightage || 0), 0) + weight > 100) {
+          throw new Error(`Employee ${employeeId} weightage would exceed 100%`);
+        }
+        const { data: linkedGoal, error: linkedErr } = await supabase.from('goals').insert({
+          goal_sheet_id: lSheet.id,
+          title,
+          uom_type: normalizedUom,
+          target_value: String(target_value),
+          weightage: weight,
+          thrust_area: thrust_area || 'General',
+          description: description || '',
+        }).select().single();
+        if (linkedErr) throw linkedErr;
+        createdGoalIds.push(linkedGoal.id);
+        await supabase.from('shared_goals').insert({
+          source_goal_id: pGoal.id,
+          linked_goal_id: linkedGoal.id,
+          target_employee_id: employeeId,
+          primary_owner_id: primaryId,
+        });
       }
-      if (linkedGoals.reduce((sum, g) => sum + Number(g.weightage || 0), 0) + weight > 100) {
-        return res.status(400).json({ error: `Employee ${employeeId} weightage would exceed 100%` });
+      res.status(201).json({ ok: true, primary_goal_id: pGoal.id, linked_count: employee_ids.length - 1 });
+    } catch (loopErr) {
+      if (createdGoalIds.length > 0) {
+        await supabase.from('goals').delete().in('id', createdGoalIds);
       }
-
-      const { data: linkedGoal, error: linkedErr } = await supabase.from('goals').insert({
-        goal_sheet_id: lSheet.id,
-        title,
-        uom_type: normalizedUom,
-        target_value: String(target_value),
-        weightage: weight,
-        thrust_area: thrust_area || 'General',
-        description: description || '',
-      }).select().single();
-      if (linkedErr) throw linkedErr;
-
-      await supabase.from('shared_goals').insert({
-        source_goal_id: pGoal.id,
-        linked_goal_id: linkedGoal.id,
-        target_employee_id: employeeId,
-        primary_owner_id: primaryId,
-      });
+      throw loopErr;
     }
-
-    res.status(201).json({ ok: true, primary_goal_id: pGoal.id, linked_count: employee_ids.length - 1 });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   }
 });
 
+// PATCH /api/goals/:id
 router.patch('/:id', requireAuth, async (req, res) => {
   try {
     const { data: goal } = await supabase
@@ -287,7 +284,6 @@ router.patch('/:id', requireAuth, async (req, res) => {
       .select('*, goal_sheets!inner(status, employee_id)')
       .eq('id', req.params.id)
       .single();
-
     if (!goal) return res.status(404).json({ error: 'Goal not found' });
     if (goal.goal_sheets.employee_id !== req.user.id && req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Forbidden' });
@@ -298,7 +294,13 @@ router.patch('/:id', requireAuth, async (req, res) => {
 
     const sharedLinks = await getSharedLinksByGoalId(goal.id);
     const isSharedRecipientGoal = isSharedRecipient(goal.id, sharedLinks);
-    const hasOnlyWeightageChange = req.body.weightage !== undefined && !req.body.title && !req.body.uom_type && req.body.target_value === undefined && !req.body.thrust_area && req.body.description === undefined;
+    const hasOnlyWeightageChange =
+      req.body.weightage !== undefined &&
+      !req.body.title &&
+      !req.body.uom_type &&
+      req.body.target_value === undefined &&
+      !req.body.thrust_area &&
+      req.body.description === undefined;
 
     if (isSharedRecipientGoal && req.user.role !== 'ADMIN' && !hasOnlyWeightageChange) {
       return res.status(403).json({ error: 'Linked shared goals can only adjust weightage' });
@@ -314,9 +316,16 @@ router.patch('/:id', requireAuth, async (req, res) => {
     if (weightage !== undefined) {
       const newWeight = Number(weightage);
       if (newWeight < MIN_WEIGHTAGE) return res.status(400).json({ error: `Minimum weightage per goal is ${MIN_WEIGHTAGE}%` });
-      const { data: sheetGoals } = await supabase.from('goals').select('id, weightage').eq('goal_sheet_id', goal.goal_sheet_id);
-      const totalWithoutCurrent = (sheetGoals || []).filter(g => g.id !== goal.id).reduce((sum, g) => sum + Number(g.weightage || 0), 0);
-      if (totalWithoutCurrent + newWeight > 100) return res.status(400).json({ error: 'Updated weightage would exceed 100%' });
+      const { data: sheetGoals } = await supabase.from('goals').select('id, weightage, team_id').eq('goal_sheet_id', goal.goal_sheet_id);
+      const isTeamGoal = goal.team_id != null;
+      const poolGoals = (sheetGoals || []).filter(g =>
+        g.id !== goal.id && (isTeamGoal ? g.team_id != null : g.team_id == null)
+      );
+      const poolTotal = poolGoals.reduce((sum, g) => sum + Number(g.weightage || 0), 0);
+      if (poolTotal + newWeight > 100) {
+        const poolName = isTeamGoal ? 'team goal' : 'individual goal';
+        return res.status(400).json({ error: `Updated weightage would exceed 100% in the ${poolName} pool (others: ${poolTotal}%)` });
+      }
       updates.weightage = newWeight;
     }
     if (thrust_area && !isSharedRecipientGoal) updates.thrust_area = thrust_area;
@@ -352,11 +361,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
       action: 'UPDATED',
       entity: 'goal',
       entity_id: goal.id,
-      detail: JSON.stringify({
-        note: `Updated goal ${title || goal.title}`,
-        before: goal,
-        after: updated,
-      }),
+      detail: JSON.stringify({ note: `Updated goal ${title || goal.title}`, before: goal, after: updated }),
     });
 
     res.json(updated);
@@ -373,7 +378,6 @@ router.delete('/:id', requireAuth, async (req, res) => {
       .select('*, goal_sheets!inner(status, employee_id)')
       .eq('id', req.params.id)
       .single();
-
     if (!goal) return res.status(404).json({ error: 'Goal not found' });
     if (goal.goal_sheets.employee_id !== req.user.id && req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: 'Forbidden' });
@@ -381,98 +385,16 @@ router.delete('/:id', requireAuth, async (req, res) => {
     if (['APPROVED', 'PENDING_APPROVAL'].includes(goal.goal_sheets.status)) {
       return res.status(403).json({ error: 'Cannot delete from a locked sheet' });
     }
-
     const { error } = await supabase.from('goals').delete().eq('id', goal.id);
     if (error) throw error;
-
     await supabase.from('audit_log').insert({
       user_id: req.user.id,
       action: 'DELETED',
       entity: 'goal',
       entity_id: goal.id,
-      detail: JSON.stringify({
-        note: `Deleted goal ${goal.title}`,
-        before: goal,
-        after: null,
-      }),
+      detail: JSON.stringify({ note: `Deleted goal ${goal.title}`, before: goal, after: null }),
     });
-
     res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/goal-sheets/submit/:sheetId
-router.post('/submit/:sheetId', requireAuth, async (req, res) => {
-  try {
-    const { data: sheet } = await supabase.from('goal_sheets').select('*').eq('id', req.params.sheetId).single();
-    if (!sheet) return res.status(404).json({ error: 'Sheet not found' });
-    if (sheet.employee_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
-    if (sheet.status !== 'DRAFT') return res.status(400).json({ error: 'Sheet is not in DRAFT status' });
-
-    const { data: cycle } = await supabase.from('cycles').select('*').eq('id', sheet.cycle_id).single();
-    ensureWindowOpen(cycle);
-
-    const { data: goals } = await supabase.from('goals').select('weightage').eq('goal_sheet_id', sheet.id);
-    const total = (goals || []).reduce((s, g) => s + Number(g.weightage || 0), 0);
-    if (total !== 100) return res.status(400).json({ error: `Weightage must total 100% (current: ${total}%)` });
-
-    await supabase.from('goal_sheets').update({ status: 'PENDING_APPROVAL' }).eq('id', sheet.id);
-    await supabase.from('audit_log').insert({
-      user_id: req.user.id,
-      action: 'SUBMITTED',
-      entity: 'goal_sheet',
-      entity_id: sheet.id,
-      detail: JSON.stringify({
-        note: 'Submitted for manager approval',
-        after: { status: 'PENDING_APPROVAL' },
-      }),
-    });
-
-    res.json({ ok: true, status: 'PENDING_APPROVAL' });
-  } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
-  }
-});
-
-// PATCH /api/goal-sheets/approve/:sheetId
-router.patch('/approve/:sheetId', requireAuth, async (req, res) => {
-  try {
-    if (!['MANAGER', 'ADMIN'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Only managers can approve goal sheets' });
-    }
-
-    const { action, comment } = req.body;
-    if (!['APPROVED', 'REJECTED'].includes(action)) {
-      return res.status(400).json({ error: 'action must be APPROVED or REJECTED' });
-    }
-
-    const { data: sheet } = await supabase.from('goal_sheets').select('*, users!inner(manager_id)').eq('id', req.params.sheetId).single();
-    if (!sheet) return res.status(404).json({ error: 'Sheet not found' });
-    if (sheet.status !== 'PENDING_APPROVAL') return res.status(400).json({ error: 'Sheet is not pending approval' });
-    if (req.user.role !== 'ADMIN' && sheet.users.manager_id !== req.user.id) {
-      return res.status(403).json({ error: 'Only the direct manager can approve this sheet' });
-    }
-
-    const newStatus = action === 'APPROVED' ? 'APPROVED' : 'DRAFT';
-    const updates = { status: newStatus };
-    if (action === 'APPROVED') updates.locked_at = new Date().toISOString();
-    if (action === 'REJECTED') updates.locked_at = null;
-
-    await supabase.from('goal_sheets').update(updates).eq('id', sheet.id);
-    await supabase.from('audit_log').insert({
-      user_id: req.user.id,
-      action,
-      entity: 'goal_sheet',
-      entity_id: sheet.id,
-      detail: JSON.stringify({
-        note: comment || `Goal sheet ${action.toLowerCase()} by manager`,
-        after: { status: newStatus, locked_at: updates.locked_at || null },
-      }),
-    });
-
-    res.json({ ok: true, status: newStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

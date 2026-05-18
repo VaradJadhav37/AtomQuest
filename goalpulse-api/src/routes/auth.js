@@ -10,7 +10,7 @@ async function getUserByEmail(email) {
   const normalized = String(email || '').toLowerCase().trim();
   const { data, error } = await supabase
     .from('users')
-    .select('*')
+    .select('id, email, name, role, password_hash, department, manager_id, is_active, created_at')
     .eq('email', normalized)
     .maybeSingle();
 
@@ -52,6 +52,9 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+    if (String(email).length > 255 || String(password).length > 255) {
+      return res.status(400).json({ error: 'Invalid credentials length' });
+    }
 
     const user = await getUserByEmail(email);
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
@@ -94,20 +97,8 @@ async function requireAuth(req, res, next) {
     }
   }
 
-  const clerkEmail = String(req.headers['x-goalkeeper-email'] || '').toLowerCase().trim();
-  if (!clerkEmail) return res.status(401).json({ error: 'Unauthorized' });
-
-  try {
-    const user = await getUserByEmail(clerkEmail);
-    if (!user) return res.status(401).json({ error: 'No app user matches this Clerk account' });
-    if (user.is_active === false) return res.status(403).json({ error: 'Account is deactivated' });
-
-    req.user = user;
-    next();
-  } catch (err) {
-    console.error('Clerk auth bridge error:', err);
-    res.status(500).json({ error: 'Authentication bridge failed' });
-  }
+  // Header-based auth disabled — all requests must use JWT Bearer tokens
+  return res.status(401).json({ error: 'Unauthorized: please log in via the application.' });
 }
 
 module.exports = { router, requireAuth };

@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { ArrowLeft, Check, Mail, Target, TrendingUp, Users, X } from 'lucide-react';
+import { ArrowLeft, Check, Mail, Target, TrendingUp, Users, X, Plus, Pencil, Trash2 } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import GoalWizard from '../components/GoalWizard';
 
 type TabKey = 'members' | 'goals' | 'analytics';
 
@@ -14,23 +15,30 @@ export default function TeamDetail() {
   const { role } = useAuth();
   const [tab, setTab] = useState<TabKey>('members');
   const [error, setError] = useState('');
+  const [showWizard, setShowWizard] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<any>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['teamDetail', teamId],
     queryFn: () => api.get(`/api/teams/${teamId}`).then(r => r.data),
-    enabled: !!teamId && (role === 'MANAGER' || role === 'ADMIN'),
+    enabled: !!teamId && (role === 'MANAGER' || role === 'ADMIN' || role === 'EMPLOYEE'),
   });
 
   const { data: goalsData } = useQuery({
     queryKey: ['teamGoals', teamId],
     queryFn: () => api.get(`/api/teams/${teamId}/goals`).then(r => r.data),
-    enabled: !!teamId && (role === 'MANAGER' || role === 'ADMIN'),
+    enabled: !!teamId && (role === 'MANAGER' || role === 'ADMIN' || role === 'EMPLOYEE'),
   });
 
   const { data: analyticsData } = useQuery({
     queryKey: ['teamAnalytics', teamId],
     queryFn: () => api.get(`/api/teams/${teamId}/analytics`).then(r => r.data),
-    enabled: !!teamId && (role === 'MANAGER' || role === 'ADMIN'),
+    enabled: !!teamId && (role === 'MANAGER' || role === 'ADMIN' || role === 'EMPLOYEE'),
+  });
+  const { data: mySheetData } = useQuery({
+    queryKey: ['mySheetForTeamGoals'],
+    queryFn: () => api.get('/api/goal-sheets/mine').then(r => r.data),
+    enabled: !!role,
   });
 
   const approveMutation = useMutation({
@@ -70,9 +78,36 @@ export default function TeamDetail() {
     ]);
   };
 
+  const deleteGoalMutation = useMutation({
+    mutationFn: (goalId: number) => api.delete(`/api/teams/${teamId}/goals/${goalId}`),
+    onMutate: async (goalId: number) => {
+      await qc.cancelQueries({ queryKey: ['teamGoals', teamId] });
+      const previous = qc.getQueryData(['teamGoals', teamId]);
+      qc.setQueryData(['teamGoals', teamId], (old: any) => ({
+        ...old,
+        goals: (old?.goals || []).filter((g: any) => Number(g.id) !== Number(goalId)),
+      }));
+      return { previous };
+    },
+    onSuccess: async () => {
+      setError('');
+      await invalidate();
+    },
+    onError: (err: any, _goalId, ctx: any) => {
+      if (ctx?.previous) qc.setQueryData(['teamGoals', teamId], ctx.previous);
+      setError(err?.response?.data?.error || 'Failed to delete goal.');
+    },
+  });
+
+
   const pendingRequests = data?.pendingRequests || [];
   const members = data?.members || [];
   const goals = goalsData?.goals || [];
+  const mySheetGoals = mySheetData?.sheet?.goals || [];
+  const myCurrentTotalWeightage = mySheetGoals.reduce((sum: number, g: any) => sum + Number(g.weightage || 0), 0);
+  const remainingWeightage = Math.max(0, 100 - myCurrentTotalWeightage + Number(editingGoal?.weightage || 0));
+  const teamGoalsTotalWeightage = goals.reduce((sum: number, g: any) => sum + Number(g.weightage || 0), 0);
+  const remainingTeamWeightage = Math.max(0, 100 - teamGoalsTotalWeightage + Number(editingGoal?.weightage || 0));
   const analytics = analyticsData?.summary || {};
   const scoreBars = useMemo(() => goals.map((goal: any) => ({
     name: goal.title.length > 24 ? `${goal.title.slice(0, 24)}...` : goal.title,
@@ -80,12 +115,20 @@ export default function TeamDetail() {
     fill: goal.achievement?.score >= 80 ? '#16a34a' : goal.achievement?.score >= 60 ? '#2563eb' : '#d97706',
   })), [goals]);
 
-  if (role !== 'MANAGER' && role !== 'ADMIN') {
-    return <div style={emptyState}>This page is only available to managers and admins.</div>;
+  if (role !== 'MANAGER' && role !== 'ADMIN' && role !== 'EMPLOYEE') {
+    return <div style={emptyState}>You do not have access to this page.</div>;
   }
 
   if (isLoading) {
-    return <div style={emptyState}>Loading team details...</div>;
+    return (
+      <div className="page-container fade-in" style={{ padding: '32px' }}>
+        <div className="skeleton" style={{ height: '140px', borderRadius: '24px', marginBottom: '24px' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: '24px' }}>
+          <div className="skeleton" style={{ height: '400px', borderRadius: '24px' }} />
+          <div className="skeleton" style={{ height: '400px', borderRadius: '24px' }} />
+        </div>
+      </div>
+    );
   }
 
   if (!data?.team) {
@@ -213,9 +256,20 @@ export default function TeamDetail() {
                         <span style={memberBadge}>{member.status}</span>
                       </td>
                       <td style={td}>
-                        <button onClick={() => removeMutation.mutate(member.employee_id)} style={dangerButton}>
-                          Remove
-                        </button>
+                        {Number(member.employee_id) === Number(team.manager_id) ? (
+                          <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Team Manager</span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Remove ${member.employee?.name || 'this member'} from the team?`)) {
+                                removeMutation.mutate(member.employee_id);
+                              }
+                            }}
+                            style={dangerButton}
+                          >
+                            Remove
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -240,12 +294,19 @@ export default function TeamDetail() {
               <div style={sectionEyebrow}>Goals</div>
               <div style={sectionTitle}>Team-scoped goals</div>
             </div>
+            <button
+              onClick={() => { setEditingGoal(null); setShowWizard(true); }}
+              style={{ ...approveButton, padding: '8px 12px' }}
+            >
+              <Plus size={14} />
+              Add Team Goal
+            </button>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={table}>
               <thead>
                 <tr>
-                  {['Goal', 'Owner', 'Thrust', 'Target', 'Score', 'Weight'].map(header => (
+                  {['Goal', 'Owner', 'Thrust', 'Target', 'Score', 'Weight', 'Actions'].map(header => (
                     <th key={header} style={th}>{header}</th>
                   ))}
                 </tr>
@@ -257,13 +318,35 @@ export default function TeamDetail() {
                     <td style={td}>{goal.employee?.name || 'N/A'}</td>
                     <td style={td}>{goal.thrust_area}</td>
                     <td style={tdMono}>{goal.target_value}</td>
-                    <td style={tdMono}>{goal.achievement?.score ?? '—'}</td>
+                    <td style={tdMono}>{goal.checkin?.status || 'NOT_STARTED'} · {goal.achievement?.score ?? '—'}%</td>
                     <td style={tdMono}>{goal.weightage}%</td>
+                    <td style={td}>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => { setEditingGoal(goal); setShowWizard(true); }}
+                          style={iconButton}
+                          title="Edit Goal"
+                        >
+                          <Pencil size={14} color="#64748b" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm('Are you sure you want to delete this team goal?')) {
+                              deleteGoalMutation.mutate(goal.id);
+                            }
+                          }}
+                          style={{ ...iconButton }}
+                          title="Delete Goal"
+                        >
+                          <Trash2 size={14} color="#ef4444" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {!goals.length && (
                   <tr>
-                    <td colSpan={6} style={{ padding: 24 }}>
+                    <td colSpan={7} style={{ padding: 24 }}>
                       <EmptyNotice text="No team goals assigned yet." />
                     </td>
                   </tr>
@@ -309,6 +392,22 @@ export default function TeamDetail() {
             </div>
           </section>
         </div>
+      )}
+
+      {showWizard && (
+        <GoalWizard
+          onClose={() => { setShowWizard(false); setEditingGoal(null); }}
+          onSave={async () => {
+            setShowWizard(false);
+            setEditingGoal(null);
+            await invalidate();
+          }}
+          remainingWeightage={remainingTeamWeightage}
+          editGoal={editingGoal}
+          teamGoalMode
+          teamId={teamId}
+          members={members}
+        />
       )}
     </div>
   );
@@ -359,6 +458,7 @@ const sectionTitle: React.CSSProperties = { marginTop: 6, fontSize: 20, fontWeig
 const requestRow: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: 16, borderRadius: 16, background: '#f8fafc', border: '1px solid #e2e8f0' };
 const approveButton: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 8, border: 'none', background: '#0f172a', color: '#fff', padding: '10px 14px', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 800 };
 const rejectButton: React.CSSProperties = { ...approveButton, background: '#fee2e2', color: '#b91c1c' };
+const iconButton: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 6, borderRadius: 8, background: '#f1f5f9', border: 'none', cursor: 'pointer' };
 const table: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', minWidth: 720 };
 const th: React.CSSProperties = { textAlign: 'left', padding: '12px 10px', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#94a3b8', borderBottom: '1px solid #e2e8f0' };
 const td: React.CSSProperties = { padding: '14px 10px', borderBottom: '1px solid #eef2f7', color: '#334155', fontSize: 13 };

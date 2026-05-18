@@ -4,6 +4,7 @@ import axios from 'axios';
 const LOCAL_API_BASE_URL = 'http://localhost:3001';
 const PRODUCTION_FALLBACK_API_BASE_URL = 'https://atomquest-ez9w.onrender.com';
 const API_BASE_CACHE_KEY = 'gk_api_base_url';
+const CSRF_CACHE_KEY = 'gk_csrf_token';
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, '');
 
@@ -78,6 +79,15 @@ const api = axios.create({
 
 api.interceptors.request.use(async cfg => {
   cfg.baseURL = await getBaseUrl();
+  const method = String(cfg.method || 'get').toUpperCase();
+  if (typeof localStorage !== 'undefined' && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    let csrf = localStorage.getItem(CSRF_CACHE_KEY);
+    if (!csrf) {
+      csrf = `${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(CSRF_CACHE_KEY, csrf);
+    }
+    cfg.headers['x-csrf-token'] = csrf;
+  }
 
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('gk_token') : null;
   if (token) {
@@ -101,7 +111,7 @@ api.interceptors.response.use(
       localStorage.removeItem('gk_token');
       localStorage.removeItem('gk_user');
       localStorage.removeItem('gk_clerk_email');
-      window.location.href = '/login';
+      window.dispatchEvent(new Event('gk_unauthorized'));
     }
     return Promise.reject(err);
   }

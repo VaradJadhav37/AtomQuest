@@ -17,7 +17,33 @@ export default function OrgAlignment() {
     queryFn: () => api.get('/api/admin/company-goal-cascade').then(r => r.data),
   });
 
-  if (isLoading) return <div style={{ padding: '40px', fontFamily: "'Inter', system-ui, sans-serif", color: '#9ca3af' }}>Loading org chart...</div>;
+  if (isLoading) return (
+    <div className="page-container fade-in" style={{ padding: '32px' }}>
+      <div className="skeleton" style={{ height: '120px', borderRadius: '24px', marginBottom: '32px' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
+        <div className="skeleton" style={{ width: '200px', height: '80px', borderRadius: '16px' }} />
+        <div style={{ display: 'flex', gap: '24px' }}>
+          <div className="skeleton" style={{ width: '200px', height: '80px', borderRadius: '16px' }} />
+          <div className="skeleton" style={{ width: '200px', height: '80px', borderRadius: '16px' }} />
+          <div className="skeleton" style={{ width: '200px', height: '80px', borderRadius: '16px' }} />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (!isLoading && (!users || users.length === 0)) {
+    return (
+      <div className="dash-page-container" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+        <div style={{ textAlign: 'center', padding: '64px 20px' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>👥</div>
+          <h2 style={{ fontSize: '20px', fontWeight: '600', color: '#111827', marginBottom: '8px' }}>No Organization Data</h2>
+          <p style={{ color: '#6b7280', fontSize: '14px', maxWidth: '400px', margin: '0 auto' }}>
+            There are no users to display in the organization tree yet.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dash-page-container" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>

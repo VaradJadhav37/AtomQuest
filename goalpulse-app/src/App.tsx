@@ -13,19 +13,23 @@ import AdminReports from './pages/AdminReports';
 import AdminUsers from './pages/AdminUsers';
 
 import Analytics from './pages/Analytics';
+import NotFound from './pages/NotFound';
+
+import React from 'react';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   if (isLoading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: "'Inter', system-ui, sans-serif", color: '#6b7280' }}>
-      Loading...
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+        <div style={{ width: '32px', height: '32px', border: '3px solid #e5e7eb', borderTopColor: '#111827', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+        <span style={{ fontSize: '13px', color: '#9ca3af', fontWeight: 500 }}>Loading...</span>
+      </div>
     </div>
   );
   if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
-
-import React from 'react';
 
 function App() {
   return (
@@ -59,7 +63,7 @@ function App() {
         <Route path="/analytics" element={<RequireAuth><AppLayout /></RequireAuth>}>
           <Route index element={<Analytics />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );

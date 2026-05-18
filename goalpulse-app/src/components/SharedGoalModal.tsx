@@ -46,7 +46,32 @@ export default function SharedGoalModal({ employees, onClose }: { employees: any
             <div style={{ fontSize: '12px', fontWeight: '600', color: '#8b5cf6', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Assign to Team</div>
             <h2 style={{ fontSize: '20px', fontWeight: '700', color: '#111827', fontFamily: "'Inter', system-ui, sans-serif" }}>Create Shared Goal</h2>
           </div>
-          <button onClick={onClose} style={{ background: '#f3f4f6', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer' }}><X size={18} /></button>
+          <button onClick={onClose}
+            style={{
+              background: '#f3f4f6',
+              border: 'none',
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: '#4b5563',
+              transition: 'all 0.2s ease',
+              outline: 'none'
+            }}
+            onMouseOver={e => {
+              e.currentTarget.style.background = '#e5e7eb';
+              e.currentTarget.style.color = '#111827';
+            }}
+            onMouseOut={e => {
+              e.currentTarget.style.background = '#f3f4f6';
+              e.currentTarget.style.color = '#4b5563';
+            }}
+          >
+            <X size={18} />
+          </button>
         </div>
 
         <div style={S.content}>

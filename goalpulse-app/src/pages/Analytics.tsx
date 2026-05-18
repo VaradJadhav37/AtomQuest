@@ -54,9 +54,9 @@ export default function Analytics() {
   ];
 
   if (isLoading) return (
-    <div style={{ padding: '28px 32px', fontFamily: IBM }}>
-      <div style={{ height: '80px', background: '#f3f4f6', borderRadius: '12px', marginBottom: '24px' }} />
-      <div style={{ height: '420px', background: '#f3f4f6', borderRadius: '20px' }} />
+    <div className="page-container fade-in" style={{ padding: '28px 32px' }}>
+      <div className="skeleton" style={{ height: '80px', borderRadius: '12px', marginBottom: '24px' }} />
+      <div className="skeleton" style={{ height: '420px', borderRadius: '20px' }} />
     </div>
   );
 

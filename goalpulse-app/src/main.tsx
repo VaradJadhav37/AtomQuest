@@ -5,6 +5,7 @@ import { ClerkProvider } from '@clerk/react';
 import { AuthProvider } from './context/AuthContext';
 import { TeamProvider } from './context/TeamContext';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -29,13 +30,15 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       signInUrl="/login"
       signUpUrl="/sign-up"
     >
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <TeamProvider>
-            <App />
-          </TeamProvider>
-        </AuthProvider>
-      </QueryClientProvider>
+      <ErrorBoundary>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <TeamProvider>
+              <App />
+            </TeamProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </ErrorBoundary>
     </ClerkProvider>
   </React.StrictMode>
 );

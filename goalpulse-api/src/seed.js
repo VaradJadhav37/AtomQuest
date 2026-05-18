@@ -23,21 +23,40 @@ const thrustAreas = [
   'Compliance & Risk',
 ];
 
-const cycles = [
-  { name: 'FY2025-Q1', year: 2025, quarter: 1, open_date: '2025-01-01', close_date: '2025-03-31', status: 'CLOSED' },
-  { name: 'FY2025-Q2', year: 2025, quarter: 2, open_date: '2025-04-01', close_date: '2025-06-30', status: 'CLOSED' },
-  { name: 'FY2025-Q3', year: 2025, quarter: 3, open_date: '2025-07-01', close_date: '2025-09-30', status: 'CLOSED' },
-  { name: 'FY2025-Q4', year: 2025, quarter: 4, open_date: '2025-10-01', close_date: '2025-12-31', status: 'CLOSED' },
-  { name: 'FY2026-Q1', year: 2026, quarter: 1, open_date: '2026-04-01', close_date: '2026-06-30', status: 'OPEN' },
-];
+const now = new Date();
+const currentYear = now.getFullYear();
+const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
+
+const cycles = [];
+for (let i = -4; i <= 0; i++) {
+  let y = currentYear;
+  let q = currentQuarter + i;
+  while (q < 1) {
+    q += 4;
+    y -= 1;
+  }
+  const openDate = new Date(y, (q - 1) * 3, 1).toISOString().split('T')[0];
+  const closeDate = new Date(y, q * 3, 0).toISOString().split('T')[0];
+  
+  cycles.push({
+    name: `FY${y}-Q${q}`,
+    year: y,
+    quarter: q,
+    open_date: openDate,
+    close_date: closeDate,
+    status: i === 0 ? 'OPEN' : 'CLOSED'
+  });
+}
 
 const cycleScoreProfiles = {
-  'FY2025-Q1': [46, 58, 68],
-  'FY2025-Q2': [58, 68, 78],
-  'FY2025-Q3': [69, 79, 86],
-  'FY2025-Q4': [82, 90, 96],
-  'FY2026-Q1': [74, 84, 92],
+  [cycles[0].name]: [46, 58, 68],
+  [cycles[1].name]: [58, 68, 78],
+  [cycles[2].name]: [69, 79, 86],
+  [cycles[3].name]: [82, 90, 96],
+  [cycles[4].name]: [74, 84, 92],
 };
+
+const currentCycleName = cycles[4].name;
 
 const userGoalTemplates = {
   'admin@goalkeeper.com': [
@@ -107,6 +126,10 @@ async function resetTables() {
     'team_join_requests',
     'team_members',
     'shared_goals',
+    'notifications',
+    'goal_activity_log',
+    'team_goal_contributions',
+    'team_goal_milestones',
     'check_ins',
     'goal_achievements',
     'goals',
@@ -239,7 +262,7 @@ async function setup() {
           thrust_area: template.thrust_area,
           description: `${template.title} for ${cycle.name}`,
           team_id:
-              cycle.name === 'FY2026-Q1'
+              cycle.name === currentCycleName
                 ? user.email === 'manager@goalkeeper.com' && i === 0
                   ? teamRows.north_star.id
                   : user.email === 'priya@goalkeeper.com' && i === 0
@@ -286,31 +309,66 @@ async function setup() {
     }
   }
 
-  const currentCycle = cycleRows['FY2026-Q1'];
-  const employeeCurrentSheet = sheetRows['employee@goalkeeper.com:FY2026-Q1'];
-  const managerCurrentSheet = sheetRows['manager@goalkeeper.com:FY2026-Q1'];
-  const priyaCurrentSheet = sheetRows['priya@goalkeeper.com:FY2026-Q1'];
-  const raviCurrentSheet = sheetRows['ravi@goalkeeper.com:FY2026-Q1'];
+  const currentCycle = cycleRows[currentCycleName];
+  const employeeCurrentSheet = sheetRows[`employee@goalkeeper.com:${currentCycleName}`];
+  const managerCurrentSheet = sheetRows[`manager@goalkeeper.com:${currentCycleName}`];
+  const priyaCurrentSheet = sheetRows[`priya@goalkeeper.com:${currentCycleName}`];
+  const raviCurrentSheet = sheetRows[`ravi@goalkeeper.com:${currentCycleName}`];
+
+  // Seed Enterprise Team Goal
+  const { data: teamGoal, error: teamGoalErr } = await supabase.from('goals').insert({
+    goal_sheet_id: managerCurrentSheet.id,
+    team_id: teamRows.north_star.id,
+    owner_id: userRows['manager@goalkeeper.com'].id,
+    title: `${currentCycleName} - Launch Enterprise Upsell Playbook`,
+    uom_type: 'Numeric',
+    target_value: '10',
+    weightage: 20,
+    thrust_area: 'Revenue Growth',
+    description: 'Drive expansion in enterprise accounts through targeted upsell motions.',
+    priority: 'HIGH',
+    goal_status: 'IN_PROGRESS',
+    visibility: 'TEAM',
+    completion_pct: 45,
+    deadline: currentCycle.close_date
+  }).select().single();
+  if (teamGoalErr) throw teamGoalErr;
+
+  await supabase.from('team_goal_milestones').insert([
+    { goal_id: teamGoal.id, title: 'Draft Playbook', milestone_status: 'COMPLETED', progress_pct: 100, priority: 'HIGH', created_by: userRows['manager@goalkeeper.com'].id },
+    { goal_id: teamGoal.id, title: 'Train Team', milestone_status: 'IN_PROGRESS', progress_pct: 30, priority: 'MEDIUM', assignee_id: userRows['employee@goalkeeper.com'].id, created_by: userRows['manager@goalkeeper.com'].id },
+    { goal_id: teamGoal.id, title: 'Execute Campaign', milestone_status: 'NOT_STARTED', progress_pct: 0, priority: 'MEDIUM', created_by: userRows['manager@goalkeeper.com'].id },
+  ]);
+
+  await supabase.from('team_goal_contributions').insert([
+    { goal_id: teamGoal.id, member_id: userRows['employee@goalkeeper.com'].id, contribution_pct: 40, contribution_note: 'Leading the training', created_by: userRows['manager@goalkeeper.com'].id },
+    { goal_id: teamGoal.id, member_id: userRows['priya@goalkeeper.com'].id, contribution_pct: 60, contribution_note: 'Executing campaign', created_by: userRows['manager@goalkeeper.com'].id },
+  ]);
+
+  await supabase.from('goal_activity_log').insert([
+    { goal_id: teamGoal.id, team_id: teamRows.north_star.id, actor_id: userRows['manager@goalkeeper.com'].id, activity_type: 'CREATED', detail: { message: 'Created team goal' } },
+    { goal_id: teamGoal.id, team_id: teamRows.north_star.id, actor_id: userRows['manager@goalkeeper.com'].id, activity_type: 'MILESTONE_UPDATED', detail: { message: 'Completed Draft Playbook milestone' } },
+  ]);
 
   // Create one shared goal in the current cycle so the manager view has linked data too.
   const { data: sharedSource, error: sharedSourceErr } = await supabase.from('goals').insert({
     goal_sheet_id: managerCurrentSheet.id,
-    title: 'FY2026-Q1 - Launch Enterprise Upsell Playbook',
+    title: `${currentCycleName} - Rollout QBR Framework`,
     uom_type: 'Numeric',
     target_value: '8',
     weightage: 20,
-    thrust_area: 'Revenue Growth',
+    thrust_area: 'Operational Efficiency',
     description: 'A shared team goal with synced progress across recipients.',
   }).select().single();
   if (sharedSourceErr) throw sharedSourceErr;
 
   const { data: sharedLinked, error: sharedLinkedErr } = await supabase.from('goals').insert({
     goal_sheet_id: raviCurrentSheet.id,
-    title: 'FY2026-Q1 - Launch Enterprise Upsell Playbook',
+    title: `${currentCycleName} - Rollout QBR Framework`,
     uom_type: 'Numeric',
     target_value: '8',
     weightage: 20,
-    thrust_area: 'Revenue Growth',
+    thrust_area: 'Operational Efficiency',
     description: 'A shared team goal with synced progress across recipients.',
   }).select().single();
   if (sharedLinkedErr) throw sharedLinkedErr;
@@ -321,9 +379,9 @@ async function setup() {
   ]);
 
   await supabase.from('audit_log').insert([
-    { user_id: userRows['manager@goalkeeper.com'].id, action: 'APPROVED', entity: 'goal_sheet', entity_id: managerCurrentSheet.id, detail: 'Approved FY2026-Q1 goal sheet for Maya Manager' },
-    { user_id: userRows['employee@goalkeeper.com'].id, action: 'SUBMITTED', entity: 'goal_sheet', entity_id: employeeCurrentSheet.id, detail: 'Submitted FY2026-Q1 goal sheet for approval' },
-    { user_id: userRows['employee@goalkeeper.com'].id, action: 'CHECK_IN', entity: 'goal', entity_id: goalRows[0].id, detail: 'Submitted Q1 check-in for Pipeline goal' },
+    { user_id: userRows['manager@goalkeeper.com'].id, action: 'APPROVED', entity: 'goal_sheet', entity_id: managerCurrentSheet.id, detail: `Approved ${currentCycleName} goal sheet for Maya Manager` },
+    { user_id: userRows['employee@goalkeeper.com'].id, action: 'SUBMITTED', entity: 'goal_sheet', entity_id: employeeCurrentSheet.id, detail: `Submitted ${currentCycleName} goal sheet for approval` },
+    { user_id: userRows['employee@goalkeeper.com'].id, action: 'CHECK_IN', entity: 'goal', entity_id: goalRows[0].id, detail: 'Submitted check-in for Pipeline goal' },
   ]);
 
   await supabase.from('escalation_rules').insert([

@@ -16,11 +16,11 @@ function parseJsonBlock(content, fallback) {
   }
 }
 
-async function groqJson({ route, cacheParts, prompt, userContext, fallback, cost, ttlMs = 1000 * 60 * 30 }) {
+async function groqJson({ route, cacheParts, prompt, userContext, fallback, cost, model = MODEL, ttlMs = 1000 * 60 * 30 }) {
   const key = cacheKey(cacheParts);
   const cached = getCachedValue(key);
   if (cached) {
-    recordAiMetric({ route, model: MODEL, cached: true, cost: 0 });
+    recordAiMetric({ route, model, cached: true, cost: 0 });
     return { data: cached, cached: true };
   }
 
@@ -32,7 +32,7 @@ async function groqJson({ route, cacheParts, prompt, userContext, fallback, cost
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         temperature: 0.5,
         max_tokens: 600,
         messages: [
@@ -43,7 +43,7 @@ async function groqJson({ route, cacheParts, prompt, userContext, fallback, cost
     });
 
     if (!response.ok) {
-      recordAiMetric({ route, model: MODEL, cached: false, cost: 0 });
+      recordAiMetric({ route, model, cached: false, cost: 0 });
       setCachedValue(key, fallback, ttlMs);
       return { data: fallback, cached: false };
     }
@@ -51,17 +51,17 @@ async function groqJson({ route, cacheParts, prompt, userContext, fallback, cost
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || '';
     const parsed = parseJsonBlock(content, fallback);
-    recordAiMetric({ route, model: MODEL, cached: false, cost });
+    recordAiMetric({ route, model, cached: false, cost });
     setCachedValue(key, parsed, ttlMs);
     return { data: parsed, cached: false };
   } catch {
-    recordAiMetric({ route, model: MODEL, cached: false, cost: 0 });
+    recordAiMetric({ route, model, cached: false, cost: 0 });
     setCachedValue(key, fallback, ttlMs);
     return { data: fallback, cached: false };
   }
 }
 
-async function groqStreamText({ prompt, userContext, onToken }) {
+async function groqStreamText({ prompt, userContext, onToken, model = MODEL }) {
   const response = await fetch(GROQ_API, {
     method: 'POST',
     headers: {
@@ -69,7 +69,7 @@ async function groqStreamText({ prompt, userContext, onToken }) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       temperature: 0.5,
       max_tokens: 600,
       stream: true,
@@ -140,6 +140,7 @@ Do not include any markdown or text outside the JSON. Be strict with scores. Vag
     userContext,
     fallback,
     cost: 0.0015,
+    model: 'mixtral-8x7b-32768',
   });
   res.json(result.data);
 });
@@ -167,6 +168,7 @@ router.post('/analyze', requireAuth, async (req, res) => {
     userContext: `Goal sheet status: ${status}\nGoals:\n${goalsText}\nTotal weightage: ${totalWeightage}%`,
     fallback,
     cost: 0.0015,
+    model: 'mixtral-8x7b-32768',
   });
   res.json(result.data);
 });
