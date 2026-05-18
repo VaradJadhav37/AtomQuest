@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const LOCAL_API_BASE_URL = 'http://localhost:3001';
 const PRODUCTION_FALLBACK_API_BASE_URL = 'https://atomquest-ez9w.onrender.com';
-const API_BASE_CACHE_KEY = 'gp_api_base_url';
+const API_BASE_CACHE_KEY = 'gk_api_base_url';
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, '');
 
@@ -79,15 +79,15 @@ const api = axios.create({
 api.interceptors.request.use(async cfg => {
   cfg.baseURL = await getBaseUrl();
 
-  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('gp_token') : null;
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('gk_token') : null;
   if (token) {
     cfg.headers.Authorization = `Bearer ${token}`;
     return cfg;
   }
 
-  const clerkEmail = typeof localStorage !== 'undefined' ? localStorage.getItem('gp_clerk_email') : null;
+  const clerkEmail = typeof localStorage !== 'undefined' ? localStorage.getItem('gk_clerk_email') : null;
   if (clerkEmail) {
-    cfg.headers['x-goalpulse-email'] = clerkEmail;
+    cfg.headers['x-goalkeeper-email'] = clerkEmail;
   }
 
   return cfg;
@@ -98,9 +98,9 @@ api.interceptors.response.use(
   r => r,
   err => {
     if (err.response?.status === 401 && typeof localStorage !== 'undefined') {
-      localStorage.removeItem('gp_token');
-      localStorage.removeItem('gp_user');
-      localStorage.removeItem('gp_clerk_email');
+      localStorage.removeItem('gk_token');
+      localStorage.removeItem('gk_user');
+      localStorage.removeItem('gk_clerk_email');
       window.location.href = '/login';
     }
     return Promise.reject(err);

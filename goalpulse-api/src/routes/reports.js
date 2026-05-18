@@ -1,7 +1,7 @@
 const express = require('express');
 const { supabase } = require('../db');
 const { requireAuth } = require('./auth');
-const { buildPerformanceSummary, cycleWindowStatus } = require('../services/goalpulse');
+const { buildPerformanceSummary, cycleWindowStatus } = require('../services/goalkeeper');
 
 const router = express.Router();
 

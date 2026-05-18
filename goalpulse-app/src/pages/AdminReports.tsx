@@ -137,7 +137,7 @@ export default function AdminReports() {
         const downloadUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = downloadUrl;
-        a.download = `GoalPulse_Report_${reportData?.cycle?.name || 'export'}.csv`;
+        a.download = `GoalKeeper_Report_${reportData?.cycle?.name || 'export'}.csv`;
         a.click();
         URL.revokeObjectURL(downloadUrl);
       })
@@ -185,7 +185,7 @@ export default function AdminReports() {
                 const downloadUrl = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = downloadUrl;
-                a.download = `GoalPulse_Report_${reportData?.cycle?.name || 'export'}.xlsx`;
+                a.download = `GoalKeeper_Report_${reportData?.cycle?.name || 'export'}.xlsx`;
                 a.click();
                 URL.revokeObjectURL(downloadUrl);
               })
@@ -412,7 +412,7 @@ export default function AdminReports() {
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{event.user_name} · {event.role}</div>
                 </div>
                 <div>
-                  <div style={{ display: 'inline-flex', padding: '4px 8px', borderRadius: 999, background: '#eff6ff', color: '#2563eb', fontSize: '11px', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{event.action}</div>
+                  <div style={{ display: 'inline-flex', padding: '4px 8px', borderRadius: 999, background: '#eff6ff', color: '#2563eb', fontSize: '11px', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{event.action}</div>
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '8px' }}>{event.entity} #{event.entity_id}</div>
                 </div>
                 <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.6 }}>

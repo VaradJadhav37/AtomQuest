@@ -1,7 +1,7 @@
 {
-  "name": "goalpulse-api",
+  "name": "goalkeeper-api",
   "version": "1.0.0",
-  "description": "GoalPulse REST API",
+  "description": "GoalKeeper REST API",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

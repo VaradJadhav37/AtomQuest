@@ -87,7 +87,7 @@ export default function GoalSheet() {
         heightLeft -= pageHeight;
       }
 
-      triggerPdfDownload(pdf, `GoalPulse_Performance_${sheet.employee?.name || 'Sheet'}.pdf`);
+      triggerPdfDownload(pdf, `GoalKeeper_Performance_${sheet.employee?.name || 'Sheet'}.pdf`);
     } catch (err) {
       console.error('PDF generation failed:', err);
       alert('Failed to generate PDF');

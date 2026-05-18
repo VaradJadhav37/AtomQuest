@@ -1,23 +1,17 @@
-// src/seed.js - Rich demo dataset for GoalPulse
+// src/seed.js - Rich demo dataset for GoalKeeper
 require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
+const { supabase } = require('./db');
 const bcrypt = require('bcryptjs');
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY,
-  { auth: { persistSession: false } }
-);
 
 const PWD = 'Demo@1234';
 const HASH = bcrypt.hashSync(PWD, 10);
 
 const users = [
-  { email: 'admin@goalpulse.com', name: 'Alex Admin', role: 'ADMIN', department: 'Leadership', managerEmail: null },
-  { email: 'manager@goalpulse.com', name: 'Maya Manager', role: 'MANAGER', department: 'Sales', managerEmail: 'admin@goalpulse.com' },
-  { email: 'employee@goalpulse.com', name: 'Eric Employee', role: 'EMPLOYEE', department: 'Sales', managerEmail: 'manager@goalpulse.com' },
-  { email: 'priya@goalpulse.com', name: 'Priya Sharma', role: 'EMPLOYEE', department: 'Sales', managerEmail: 'manager@goalpulse.com' },
-  { email: 'ravi@goalpulse.com', name: 'Ravi Menon', role: 'EMPLOYEE', department: 'Operations', managerEmail: 'manager@goalpulse.com' },
+  { email: 'admin@goalkeeper.com', name: 'Alex Admin', role: 'ADMIN', department: 'Leadership', managerEmail: null },
+  { email: 'manager@goalkeeper.com', name: 'Maya Manager', role: 'MANAGER', department: 'Sales', managerEmail: 'admin@goalkeeper.com' },
+  { email: 'employee@goalkeeper.com', name: 'Eric Employee', role: 'EMPLOYEE', department: 'Sales', managerEmail: 'manager@goalkeeper.com' },
+  { email: 'priya@goalkeeper.com', name: 'Priya Sharma', role: 'EMPLOYEE', department: 'Sales', managerEmail: 'manager@goalkeeper.com' },
+  { email: 'ravi@goalkeeper.com', name: 'Ravi Menon', role: 'EMPLOYEE', department: 'Operations', managerEmail: 'manager@goalkeeper.com' },
 ];
 
 const thrustAreas = [
@@ -46,27 +40,27 @@ const cycleScoreProfiles = {
 };
 
 const userGoalTemplates = {
-  'admin@goalpulse.com': [
+  'admin@goalkeeper.com': [
     { title: 'Expand partner pipeline', uom_type: 'Numeric', target_value: '1500000', weightage: 40, thrust_area: 'Revenue Growth' },
     { title: 'Governance audit completion', uom_type: 'Zero', target_value: '0', weightage: 35, thrust_area: 'Compliance & Risk' },
     { title: 'AI enablement rollout', uom_type: 'Percentage', target_value: '80', weightage: 25, thrust_area: 'Innovation' },
   ],
-  'manager@goalpulse.com': [
+  'manager@goalkeeper.com': [
     { title: 'Quarterly team revenue', uom_type: 'Numeric', target_value: '900000', weightage: 20, thrust_area: 'Revenue Growth' },
     { title: 'Coach and unblock team', uom_type: 'Zero', target_value: '0', weightage: 30, thrust_area: 'People Development' },
     { title: 'Improve review turnaround', uom_type: 'Percentage', target_value: '95', weightage: 30, thrust_area: 'Operational Efficiency' },
   ],
-  'employee@goalpulse.com': [
+  'employee@goalkeeper.com': [
     { title: 'New pipeline creation', uom_type: 'Numeric', target_value: '1200000', weightage: 40, thrust_area: 'Revenue Growth' },
     { title: 'Customer retention', uom_type: 'Percentage', target_value: '96', weightage: 35, thrust_area: 'Customer Satisfaction' },
     { title: 'Compliance training', uom_type: 'Zero', target_value: '0', weightage: 25, thrust_area: 'Compliance & Risk' },
   ],
-  'priya@goalpulse.com': [
+  'priya@goalkeeper.com': [
     { title: 'Enterprise expansion ARR', uom_type: 'Numeric', target_value: '600000', weightage: 40, thrust_area: 'Revenue Growth' },
     { title: 'Close enterprise accounts', uom_type: 'Numeric', target_value: '12', weightage: 35, thrust_area: 'Customer Satisfaction' },
     { title: 'Launch upsell playbook', uom_type: 'Percentage', target_value: '85', weightage: 25, thrust_area: 'Innovation' },
   ],
-  'ravi@goalpulse.com': [
+  'ravi@goalkeeper.com': [
     { title: 'Certify on product stack', uom_type: 'Zero', target_value: '0', weightage: 35, thrust_area: 'People Development' },
     { title: 'Reduce resolution time', uom_type: 'Percentage', target_value: '80', weightage: 40, thrust_area: 'Operational Efficiency' },
     { title: 'Reduce incident repeat rate', uom_type: 'Percentage', target_value: '90', weightage: 25, thrust_area: 'Compliance & Risk' },
@@ -86,7 +80,7 @@ function clampScore(score) {
 function scoreForGoal(cycleName, user, goalIndex) {
   const base = cycleScoreProfiles[cycleName][goalIndex];
   const offset = roleOffsets[user.role] || 0;
-  const extra = user.email === 'ravi@goalpulse.com' ? -6 : user.email === 'priya@goalpulse.com' ? 4 : 0;
+  const extra = user.email === 'ravi@goalkeeper.com' ? -6 : user.email === 'priya@goalkeeper.com' ? 4 : 0;
   return clampScore(base + offset + extra);
 }
 
@@ -100,8 +94,8 @@ function actualValueForGoal(goal, score, cycle) {
 
 function statusForSheet(cycle, user) {
   if (cycle.status === 'OPEN') {
-    if (user.email === 'ravi@goalpulse.com') return 'DRAFT';
-    if (user.email === 'priya@goalpulse.com' || user.email === 'employee@goalpulse.com') return 'APPROVED';
+    if (user.email === 'ravi@goalkeeper.com') return 'DRAFT';
+    if (user.email === 'priya@goalkeeper.com' || user.email === 'employee@goalkeeper.com') return 'APPROVED';
     return 'DRAFT';
   }
   return 'APPROVED';
@@ -110,11 +104,14 @@ function statusForSheet(cycle, user) {
 async function resetTables() {
   const tables = [
     'audit_log',
+    'team_join_requests',
+    'team_members',
     'shared_goals',
     'check_ins',
     'goal_achievements',
     'goals',
     'goal_sheets',
+    'teams',
     'escalation_events',
     'escalation_rules',
     'thrust_areas',
@@ -164,6 +161,43 @@ async function setup() {
     cycleRows[cycle.name] = data;
   }
 
+  const teamSeed = [
+    { key: 'north_star', name: 'North Star Sales', description: 'Revenue-focused execution pod for enterprise accounts.' },
+    { key: 'ops_pod', name: 'Ops Pod', description: 'Operational excellence and delivery governance team.' },
+  ];
+  const teamRows = {};
+  for (const team of teamSeed) {
+    const { data, error } = await supabase.from('teams').insert({
+      name: team.name,
+      description: team.description,
+      manager_id: userRows['manager@goalkeeper.com'].id,
+      is_active: true,
+    }).select().single();
+    if (error) throw error;
+    teamRows[team.key] = data;
+  }
+
+  const membershipSeed = [
+    { team_id: teamRows.north_star.id, employee_id: userRows['employee@goalkeeper.com'].id },
+    { team_id: teamRows.north_star.id, employee_id: userRows['priya@goalkeeper.com'].id },
+    { team_id: teamRows.ops_pod.id, employee_id: userRows['ravi@goalkeeper.com'].id },
+  ];
+  for (const membership of membershipSeed) {
+    const { error } = await supabase.from('team_members').insert({
+      ...membership,
+      status: 'active',
+      joined_at: new Date().toISOString(),
+    });
+    if (error) throw error;
+  }
+
+  const { error: requestErr } = await supabase.from('team_join_requests').insert({
+    team_id: teamRows.north_star.id,
+    employee_id: userRows['ravi@goalkeeper.com'].id,
+    status: 'pending',
+  });
+  if (requestErr) throw requestErr;
+
   await supabase.from('thrust_areas').insert(thrustAreas.map(name => ({ name })));
 
   const sheetRows = {};
@@ -204,9 +238,26 @@ async function setup() {
           weightage: template.weightage,
           thrust_area: template.thrust_area,
           description: `${template.title} for ${cycle.name}`,
+          team_id:
+              cycle.name === 'FY2026-Q1'
+                ? user.email === 'manager@goalkeeper.com' && i === 0
+                  ? teamRows.north_star.id
+                  : user.email === 'priya@goalkeeper.com' && i === 0
+                    ? teamRows.north_star.id
+                    : user.email === 'ravi@goalkeeper.com' && i === 1
+                      ? teamRows.ops_pod.id
+                      : null
+                : null,
         };
 
-        const { data: goal, error: goalErr } = await supabase.from('goals').insert(goalPayload).select().single();
+        let { data: goal, error: goalErr } = await supabase.from('goals').insert(goalPayload).select().single();
+        if (goalErr && (String(goalErr.message || '').includes('team_id') || goalErr.code === 'PGRST204')) {
+          const fallbackPayload = { ...goalPayload };
+          delete fallbackPayload.team_id;
+          const retryRes = await supabase.from('goals').insert(fallbackPayload).select().single();
+          goal = retryRes.data;
+          goalErr = retryRes.error;
+        }
         if (goalErr) throw goalErr;
         goalRows.push(goal);
 
@@ -236,10 +287,10 @@ async function setup() {
   }
 
   const currentCycle = cycleRows['FY2026-Q1'];
-  const employeeCurrentSheet = sheetRows['employee@goalpulse.com:FY2026-Q1'];
-  const managerCurrentSheet = sheetRows['manager@goalpulse.com:FY2026-Q1'];
-  const priyaCurrentSheet = sheetRows['priya@goalpulse.com:FY2026-Q1'];
-  const raviCurrentSheet = sheetRows['ravi@goalpulse.com:FY2026-Q1'];
+  const employeeCurrentSheet = sheetRows['employee@goalkeeper.com:FY2026-Q1'];
+  const managerCurrentSheet = sheetRows['manager@goalkeeper.com:FY2026-Q1'];
+  const priyaCurrentSheet = sheetRows['priya@goalkeeper.com:FY2026-Q1'];
+  const raviCurrentSheet = sheetRows['ravi@goalkeeper.com:FY2026-Q1'];
 
   // Create one shared goal in the current cycle so the manager view has linked data too.
   const { data: sharedSource, error: sharedSourceErr } = await supabase.from('goals').insert({
@@ -265,14 +316,14 @@ async function setup() {
   if (sharedLinkedErr) throw sharedLinkedErr;
 
   await supabase.from('shared_goals').insert([
-    { source_goal_id: sharedSource.id, linked_goal_id: sharedSource.id, target_employee_id: userRows['manager@goalpulse.com'].id, primary_owner_id: userRows['manager@goalpulse.com'].id },
-    { source_goal_id: sharedSource.id, linked_goal_id: sharedLinked.id, target_employee_id: userRows['ravi@goalpulse.com'].id, primary_owner_id: userRows['manager@goalpulse.com'].id },
+    { source_goal_id: sharedSource.id, linked_goal_id: sharedSource.id, target_employee_id: userRows['manager@goalkeeper.com'].id, primary_owner_id: userRows['manager@goalkeeper.com'].id },
+    { source_goal_id: sharedSource.id, linked_goal_id: sharedLinked.id, target_employee_id: userRows['ravi@goalkeeper.com'].id, primary_owner_id: userRows['manager@goalkeeper.com'].id },
   ]);
 
   await supabase.from('audit_log').insert([
-    { user_id: userRows['manager@goalpulse.com'].id, action: 'APPROVED', entity: 'goal_sheet', entity_id: managerCurrentSheet.id, detail: 'Approved FY2026-Q1 goal sheet for Maya Manager' },
-    { user_id: userRows['employee@goalpulse.com'].id, action: 'SUBMITTED', entity: 'goal_sheet', entity_id: employeeCurrentSheet.id, detail: 'Submitted FY2026-Q1 goal sheet for approval' },
-    { user_id: userRows['employee@goalpulse.com'].id, action: 'CHECK_IN', entity: 'goal', entity_id: goalRows[0].id, detail: 'Submitted Q1 check-in for Pipeline goal' },
+    { user_id: userRows['manager@goalkeeper.com'].id, action: 'APPROVED', entity: 'goal_sheet', entity_id: managerCurrentSheet.id, detail: 'Approved FY2026-Q1 goal sheet for Maya Manager' },
+    { user_id: userRows['employee@goalkeeper.com'].id, action: 'SUBMITTED', entity: 'goal_sheet', entity_id: employeeCurrentSheet.id, detail: 'Submitted FY2026-Q1 goal sheet for approval' },
+    { user_id: userRows['employee@goalkeeper.com'].id, action: 'CHECK_IN', entity: 'goal', entity_id: goalRows[0].id, detail: 'Submitted Q1 check-in for Pipeline goal' },
   ]);
 
   await supabase.from('escalation_rules').insert([
@@ -285,9 +336,9 @@ async function setup() {
   console.log('Supabase seeded successfully.');
   console.log('');
   console.log('Demo accounts:');
-  console.log('  employee@goalpulse.com / Demo@1234');
-  console.log('  manager@goalpulse.com  / Demo@1234');
-  console.log('  admin@goalpulse.com    / Demo@1234');
+  console.log('  employee@goalkeeper.com / Demo@1234');
+  console.log('  manager@goalkeeper.com  / Demo@1234');
+  console.log('  admin@goalkeeper.com    / Demo@1234');
 }
 
 if (require.main === module) {

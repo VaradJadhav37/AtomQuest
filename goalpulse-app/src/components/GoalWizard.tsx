@@ -4,6 +4,8 @@ import { useMutation } from '@tanstack/react-query';
 import { Sparkles, X } from 'lucide-react';
 import api from '../lib/api';
 import { UOM_TYPES, normalizeUomType, uomPlaceholder } from '../lib/uom';
+import { useAuth } from '../context/AuthContext';
+import { useTeamContext } from '../context/TeamContext';
 
 const THRUST_AREAS = ['Revenue Growth', 'Customer Satisfaction', 'Operational Efficiency', 'People Development', 'Innovation', 'Compliance & Risk'];
 
@@ -15,6 +17,8 @@ interface Props {
 }
 
 export default function GoalWizard({ onClose, onSave, remainingWeightage, editGoal }: Props) {
+  const { role } = useAuth();
+  const { teams, activeTeamId } = useTeamContext();
   const [form, setForm] = useState({
     title: editGoal?.title || '',
     uom_type: normalizeUomType(editGoal?.uom_type),
@@ -22,6 +26,7 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
     weightage: editGoal?.weightage || '',
     thrust_area: editGoal?.thrust_area || 'Revenue Growth',
     description: editGoal?.description || '',
+    team_id: editGoal?.team_id ? String(editGoal.team_id) : activeTeamId !== 'all' ? activeTeamId : '',
   });
   const [aiScorecard, setAiScorecard] = useState<any>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -34,10 +39,11 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
 
   const saveMutation = useMutation({
     mutationFn: () => {
+      const payload = { ...form, uom_type: normalizeUomType(form.uom_type), weightage: Number(form.weightage), team_id: form.team_id ? Number(form.team_id) : null };
       if (editGoal) {
-        return api.patch(`/api/goals/${editGoal.id}`, { ...form, uom_type: normalizeUomType(form.uom_type), weightage: Number(form.weightage) });
+        return api.patch(`/api/goals/${editGoal.id}`, payload);
       }
-      return api.post('/api/goals', { ...form, uom_type: normalizeUomType(form.uom_type), weightage: Number(form.weightage) });
+      return api.post('/api/goals', payload);
     },
     onSuccess: () => onSave(),
     onError: (err: any) => setError(err.response?.data?.error || 'Failed to save goal'),
@@ -248,6 +254,23 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
                     </div>
                   )}
                 </div>
+                {(role === 'MANAGER' || role === 'ADMIN') && (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={labelStyle}>Assign to Team</label>
+                    <select
+                      value={form.team_id}
+                      onChange={e => setForm(f => ({ ...f, team_id: e.target.value }))}
+                      style={{ ...inputStyle }}
+                    >
+                      <option value="">All Teams / Default Workspace</option>
+                      {teams.map(team => (
+                        <option key={team.id} value={String(team.id)}>
+                          {team.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div style={{ marginBottom: '20px' }}>

@@ -12,7 +12,7 @@ const {
   parseAuditDetail,
   compareCycles,
   buildScoreExplanation,
-} = require('../services/goalpulse');
+} = require('../services/goalkeeper');
 
 const router = express.Router();
 
@@ -27,6 +27,26 @@ function requireManagerOrAdmin(req, res, next) {
 
 function csvCell(value) {
   return `"${String(value ?? '').replace(/\r?\n/g, ' ').replace(/"/g, '""')}"`;
+}
+
+async function logAdminEvent({ userId, action, entity, entityId, detail }) {
+  await supabase.from('audit_log').insert({
+    user_id: userId,
+    action,
+    entity,
+    entity_id: entityId,
+    detail: typeof detail === 'string' ? detail : JSON.stringify(detail),
+  });
+}
+
+async function getTeam(teamId) {
+  const { data } = await supabase.from('teams').select('*').eq('id', teamId).maybeSingle();
+  return data || null;
+}
+
+async function getUser(userId) {
+  const { data } = await supabase.from('users').select('id, name, email, role, department, manager_id, is_active, created_at').eq('id', userId).maybeSingle();
+  return data || null;
 }
 
 async function getOpenCycle() {
@@ -681,7 +701,7 @@ router.get('/report', requireAuth, requireManagerOrAdmin, async (req, res) => {
       ];
 
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="GoalPulse_Report_${cycle.name}.csv"`);
+      res.setHeader('Content-Disposition', `attachment; filename="GoalKeeper_Report_${cycle.name}.csv"`);
       return res.send(lines.join('\n'));
     }
 
@@ -718,7 +738,7 @@ router.get('/report', requireAuth, requireManagerOrAdmin, async (req, res) => {
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
       const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename="GoalPulse_Report_${cycle.name}.xlsx"`);
+      res.setHeader('Content-Disposition', `attachment; filename="GoalKeeper_Report_${cycle.name}.xlsx"`);
       return res.send(buffer);
     }
 
@@ -726,12 +746,6 @@ router.get('/report', requireAuth, requireManagerOrAdmin, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
-
-// GET /api/admin/users
-router.get('/users', requireAuth, requireAdmin, async (req, res) => {
-  const { data } = await supabase.from('users').select('id, name, email, role, department, manager_id, created_at');
-  res.json(data || []);
 });
 
 // POST /api/admin/seed-reset
@@ -992,6 +1006,180 @@ router.post('/unlock-sheet/:sheetId', requireAuth, requireAdmin, async (req, res
     });
 
     res.json({ ok: true, status: 'DRAFT' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/users
+router.get('/users', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, name, email, role, department, manager_id, is_active, created_at')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+
+    const userIds = (users || []).map(user => user.id);
+    const memberships = userIds.length
+      ? (await supabase.from('team_members').select('id, team_id, employee_id, status, joined_at').in('employee_id', userIds)).data || []
+      : [];
+    const teamIds = [...new Set(memberships.map(member => member.team_id))];
+    const teams = teamIds.length
+      ? (await supabase.from('teams').select('id, name, description, manager_id, is_active').in('id', teamIds)).data || []
+      : [];
+    const teamMap = new Map(teams.map(team => [Number(team.id), team]));
+
+    res.json({
+      users: (users || []).map(user => ({
+        ...user,
+        teams: memberships.filter(member => Number(member.employee_id) === Number(user.id)).map(member => ({
+          ...member,
+          team: teamMap.get(Number(member.team_id)) || null,
+        })),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/team-requests
+router.get('/team-requests', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const status = req.query.status ? String(req.query.status) : 'pending';
+    const query = supabase.from('team_join_requests').select('*');
+    if (status !== 'all') query.eq('status', status);
+    const { data: requests, error } = await query.order('requested_at', { ascending: false });
+    if (error) throw error;
+
+    const teams = (requests || []).length
+      ? (await supabase.from('teams').select('id, name, description, manager_id, is_active').in('id', requests.map(request => request.team_id))).data || []
+      : [];
+    const users = (requests || []).length
+      ? (await supabase.from('users').select('id, name, email, role, department').in('id', requests.map(request => request.employee_id))).data || []
+      : [];
+    const reviewers = (requests || []).length
+      ? (await supabase.from('users').select('id, name, email, role, department').in('id', requests.map(request => request.reviewed_by).filter(Boolean))).data || []
+      : [];
+    const teamMap = new Map(teams.map(team => [Number(team.id), team]));
+    const userMap = new Map(users.map(user => [Number(user.id), user]));
+    const reviewerMap = new Map(reviewers.map(user => [Number(user.id), user]));
+
+    res.json({
+      requests: (requests || []).map(request => ({
+        ...request,
+        team: teamMap.get(Number(request.team_id)) || null,
+        employee: userMap.get(Number(request.employee_id)) || null,
+        reviewer: reviewerMap.get(Number(request.reviewed_by)) || null,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/users/:userId/add-to-team
+router.post('/users/:userId/add-to-team', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const user = await getUser(req.params.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role !== 'EMPLOYEE') return res.status(400).json({ error: 'Only employees can be added to teams' });
+
+    const teamId = Number(req.body.team_id);
+    const team = await getTeam(teamId);
+    if (!team || team.is_active === false) return res.status(404).json({ error: 'Team not found' });
+
+    const now = new Date().toISOString();
+    const existingMembership = await supabase.from('team_members').select('*').eq('team_id', team.id).eq('employee_id', user.id).maybeSingle();
+    if (existingMembership.data) {
+      const { error: memberUpdateError } = await supabase.from('team_members').update({ status: 'active', joined_at: now }).eq('id', existingMembership.data.id);
+      if (memberUpdateError) throw memberUpdateError;
+    } else {
+      const { error: memberInsertError } = await supabase.from('team_members').insert({
+        team_id: team.id,
+        employee_id: user.id,
+        status: 'active',
+        joined_at: now,
+      });
+      if (memberInsertError) throw memberInsertError;
+    }
+
+    const { data: request, error: requestError } = await supabase.from('team_join_requests').upsert({
+      team_id: team.id,
+      employee_id: user.id,
+      status: 'approved',
+      reviewed_by: req.user.id,
+      reviewed_at: now,
+    }, { onConflict: 'team_id,employee_id,status' }).select().single();
+    if (requestError) throw requestError;
+
+    await logAdminEvent({
+      userId: req.user.id,
+      action: 'TEAM_EVENT',
+      entity: 'team_join_request',
+      entityId: request.id,
+      detail: {
+        note: `Admin added ${user.name} to team ${team.name}`,
+        after: request,
+      },
+    });
+
+    res.status(201).json({ ok: true, request });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/users/:userId/deactivate
+router.patch('/users/:userId/deactivate', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const user = await getUser(req.params.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { data: updated, error } = await supabase.from('users').update({ is_active: false }).eq('id', user.id).select().single();
+    if (error) throw error;
+
+    await logAdminEvent({
+      userId: req.user.id,
+      action: 'UPDATED',
+      entity: 'user',
+      entityId: user.id,
+      detail: {
+        note: `Deactivated account for ${user.email}`,
+        before: user,
+        after: updated,
+      },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/users/:userId/reactivate
+router.patch('/users/:userId/reactivate', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const user = await getUser(req.params.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { data: updated, error } = await supabase.from('users').update({ is_active: true }).eq('id', user.id).select().single();
+    if (error) throw error;
+
+    await logAdminEvent({
+      userId: req.user.id,
+      action: 'UPDATED',
+      entity: 'user',
+      entityId: user.id,
+      detail: {
+        note: `Reactivated account for ${user.email}`,
+        before: user,
+        after: updated,
+      },
+    });
+
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

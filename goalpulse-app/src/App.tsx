@@ -6,8 +6,11 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import GoalSheet from './pages/GoalSheet';
 import Team from './pages/Team';
+import ManagerTeams from './pages/ManagerTeams';
+import TeamDetail from './pages/TeamDetail';
 import OrgAlignment from './pages/OrgAlignment';
 import AdminReports from './pages/AdminReports';
+import AdminUsers from './pages/AdminUsers';
 
 import Analytics from './pages/Analytics';
 
@@ -39,6 +42,13 @@ function App() {
         </Route>
         <Route path="/team" element={<RequireAuth><AppLayout /></RequireAuth>}>
           <Route index element={<Team />} />
+        </Route>
+        <Route path="/manager/teams" element={<RequireAuth><AppLayout /></RequireAuth>}>
+          <Route index element={<ManagerTeams />} />
+          <Route path=":teamId" element={<TeamDetail />} />
+        </Route>
+        <Route path="/admin/users" element={<RequireAuth><AppLayout /></RequireAuth>}>
+          <Route index element={<AdminUsers />} />
         </Route>
         <Route path="/org-alignment" element={<RequireAuth><AppLayout /></RequireAuth>}>
           <Route index element={<OrgAlignment />} />

@@ -1,7 +1,7 @@
 const express = require('express');
 const { supabase } = require('../db');
 const { requireAuth } = require('./auth');
-const { cycleWindowStatus, normalizeUomType } = require('../services/goalpulse');
+const { cycleWindowStatus, normalizeUomType } = require('../services/goalkeeper');
 
 const router = express.Router();
 const MAX_GOALS_PER_SHEET = 8;
@@ -70,6 +70,19 @@ function isSharedRecipient(goalId, sharedLinks) {
   return (sharedLinks || []).some(link => Number(link.linked_goal_id) === Number(goalId) && Number(link.source_goal_id) !== Number(goalId));
 }
 
+async function getTeamById(teamId) {
+  if (!teamId) return null;
+  const { data } = await supabase.from('teams').select('*').eq('id', teamId).maybeSingle();
+  return data || null;
+}
+
+async function canManageTeam(user, teamId) {
+  if (!teamId) return true;
+  if (user.role === 'ADMIN') return true;
+  const team = await getTeamById(teamId);
+  return !!team && Number(team.manager_id) === Number(user.id) && team.is_active !== false;
+}
+
 async function enrichSheet(sheet) {
   const goals = await getSheetGoals(sheet.id);
   const { data: employee } = await supabase
@@ -115,7 +128,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 // POST /api/goals â€” add goal to current sheet
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const { title, uom_type, target_value, weightage, thrust_area, description, cycle_id } = req.body;
+    const { title, uom_type, target_value, weightage, thrust_area, description, cycle_id, team_id } = req.body;
     const hasTarget = target_value !== undefined && target_value !== null && String(target_value).trim() !== '';
     const hasWeight = weightage !== undefined && weightage !== null && String(weightage).trim() !== '';
     if (!title || !uom_type || !hasTarget || !hasWeight) {
@@ -131,6 +144,10 @@ router.post('/', requireAuth, async (req, res) => {
     const cycle = await getCycle(cycle_id);
     if (!cycle) return res.status(400).json({ error: 'No active cycle' });
     ensureWindowOpen(cycle);
+
+    if (team_id && !(await canManageTeam(req.user, team_id))) {
+      return res.status(403).json({ error: 'You do not manage that team' });
+    }
 
     const sheet = await getOrCreateSheet(req.user.id, cycle.id);
     if (['APPROVED', 'PENDING_APPROVAL'].includes(sheet.status)) {
@@ -149,6 +166,7 @@ router.post('/', requireAuth, async (req, res) => {
 
     const { data: goal, error } = await supabase.from('goals').insert({
       goal_sheet_id: sheet.id,
+      team_id: team_id || null,
       title,
       uom_type: normalizedUom,
       target_value: String(target_value),
@@ -287,7 +305,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
     }
 
     const updates = {};
-    const { title, uom_type, target_value, weightage, thrust_area, description } = req.body;
+    const { title, uom_type, target_value, weightage, thrust_area, description, team_id } = req.body;
     const normalizedUom = uom_type ? normalizeUomType(uom_type) : null;
 
     if (title && !isSharedRecipientGoal) updates.title = title;
@@ -303,6 +321,12 @@ router.patch('/:id', requireAuth, async (req, res) => {
     }
     if (thrust_area && !isSharedRecipientGoal) updates.thrust_area = thrust_area;
     if (description !== undefined && !isSharedRecipientGoal) updates.description = description;
+    if (team_id !== undefined && !isSharedRecipientGoal) {
+      if (!(await canManageTeam(req.user, team_id))) {
+        return res.status(403).json({ error: 'You do not manage that team' });
+      }
+      updates.team_id = team_id || null;
+    }
 
     const { data: updated, error } = await supabase.from('goals').update(updates).eq('id', goal.id).select().single();
     if (error) throw error;

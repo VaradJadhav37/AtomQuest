@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════
--- GOALPULSE — SUPABASE SETUP SQL
+-- GOALKEEPER — SUPABASE SETUP SQL
 -- Paste this ENTIRE file into Supabase Dashboard → SQL Editor → Run
 -- URL: https://supabase.com/dashboard/project/lrtpvwzppxttmlqabuhu/sql/new
 -- ═══════════════════════════════════════════════════════════════
@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   manager_id    INTEGER REFERENCES users(id),
   department    TEXT DEFAULT 'General',
+  is_active     BOOLEAN NOT NULL DEFAULT true,
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -38,13 +39,46 @@ CREATE TABLE IF NOT EXISTS goal_sheets (
   status      TEXT NOT NULL DEFAULT 'DRAFT'
                 CHECK(status IN ('DRAFT','PENDING_APPROVAL','APPROVED','REJECTED')),
   locked_at   TIMESTAMPTZ,
+  version     INTEGER NOT NULL DEFAULT 1,
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(employee_id, cycle_id)
+);
+
+CREATE TABLE IF NOT EXISTS teams (
+  id          SERIAL PRIMARY KEY,
+  name        VARCHAR(100) NOT NULL,
+  description TEXT DEFAULT '',
+  manager_id  INTEGER NOT NULL REFERENCES users(id),
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  is_active   BOOLEAN NOT NULL DEFAULT true,
+  UNIQUE(manager_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+  id          SERIAL PRIMARY KEY,
+  team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  employee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at   TIMESTAMPTZ DEFAULT NOW(),
+  status      TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'removed')),
+  UNIQUE(team_id, employee_id)
+);
+
+CREATE TABLE IF NOT EXISTS team_join_requests (
+  id               SERIAL PRIMARY KEY,
+  team_id          INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  employee_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requested_at     TIMESTAMPTZ DEFAULT NOW(),
+  status           TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+  reviewed_by      INTEGER REFERENCES users(id),
+  reviewed_at      TIMESTAMPTZ,
+  rejection_reason TEXT DEFAULT '',
+  UNIQUE(team_id, employee_id, status)
 );
 
 CREATE TABLE IF NOT EXISTS goals (
   id            SERIAL PRIMARY KEY,
   goal_sheet_id INTEGER NOT NULL REFERENCES goal_sheets(id) ON DELETE CASCADE,
+  team_id       INTEGER REFERENCES teams(id),
   title         TEXT NOT NULL,
   uom_type      TEXT NOT NULL CHECK(uom_type IN ('Numeric','Percentage','Timeline','Zero')),
   target_value  TEXT NOT NULL,
@@ -116,6 +150,23 @@ CREATE TABLE IF NOT EXISTS escalation_events (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ai_telemetry (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    total_requests INTEGER NOT NULL DEFAULT 0,
+    cache_hits INTEGER NOT NULL DEFAULT 0,
+    cache_misses INTEGER NOT NULL DEFAULT 0,
+    estimated_spend NUMERIC(10, 4) NOT NULL DEFAULT 0,
+    routes_json JSONB DEFAULT '{}'::jsonb,
+    models_json JSONB DEFAULT '{}'::jsonb,
+    last_request_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Insert the singleton row if it doesn't exist
+INSERT INTO ai_telemetry (id, total_requests, cache_hits, cache_misses, estimated_spend)
+VALUES (1, 0, 0, 0, 0)
+ON CONFLICT (id) DO NOTHING;
+
 -- STEP 2: Enable RLS and allow all (app-level JWT auth handles security)
 ALTER TABLE users           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cycles          ENABLE ROW LEVEL SECURITY;
@@ -128,6 +179,10 @@ ALTER TABLE shared_goals    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE escalation_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE escalation_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE thrust_areas    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE teams           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE team_members    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE team_join_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_telemetry    ENABLE ROW LEVEL SECURITY;
 
 -- Normalize older tables created by previous script versions
 ALTER TABLE goals DROP CONSTRAINT IF EXISTS goals_uom_type_check;
@@ -173,6 +228,18 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'allow_all_thrust') THEN
     CREATE POLICY allow_all_thrust ON thrust_areas FOR ALL USING (true) WITH CHECK (true);
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'allow_all_teams') THEN
+    CREATE POLICY allow_all_teams ON teams FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'allow_all_team_members') THEN
+    CREATE POLICY allow_all_team_members ON team_members FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'allow_all_team_join_requests') THEN
+    CREATE POLICY allow_all_team_join_requests ON team_join_requests FOR ALL USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'allow_all_ai_telemetry') THEN
+    CREATE POLICY allow_all_ai_telemetry ON ai_telemetry FOR ALL USING (true) WITH CHECK (true);
+  END IF;
 END $$;
 
 -- STEP 3: Seed demo data
@@ -200,6 +267,9 @@ BEGIN
   DELETE FROM check_ins;
   DELETE FROM goal_achievements;
   DELETE FROM goals;
+  DELETE FROM team_join_requests;
+  DELETE FROM team_members;
+  DELETE FROM teams;
   DELETE FROM goal_sheets;
   DELETE FROM audit_log;
   DELETE FROM thrust_areas;
@@ -210,23 +280,23 @@ BEGIN
 
   -- Users
   INSERT INTO users (email, name, role, password_hash, department)
-  VALUES ('admin@goalpulse.com', 'Alex Admin', 'ADMIN', '$2b$10$Mbx1KboLT7Kk5GuzuNatc.WUTqGLb3hnJQPVIUaW4wbcks3mm.Ok2', 'Leadership')
+  VALUES ('admin@goalkeeper.com', 'Alex Admin', 'ADMIN', '$2b$10$Mbx1KboLT7Kk5GuzuNatc.WUTqGLb3hnJQPVIUaW4wbcks3mm.Ok2', 'Leadership')
   RETURNING id INTO v_admin_id;
 
   INSERT INTO users (email, name, role, password_hash, manager_id, department)
-  VALUES ('manager@goalpulse.com', 'Maya Manager', 'MANAGER', '$2b$10$Mbx1KboLT7Kk5GuzuNatc.WUTqGLb3hnJQPVIUaW4wbcks3mm.Ok2', v_admin_id, 'Sales')
+  VALUES ('manager@goalkeeper.com', 'Maya Manager', 'MANAGER', '$2b$10$Mbx1KboLT7Kk5GuzuNatc.WUTqGLb3hnJQPVIUaW4wbcks3mm.Ok2', v_admin_id, 'Sales')
   RETURNING id INTO v_mgr_id;
 
   INSERT INTO users (email, name, role, password_hash, manager_id, department)
-  VALUES ('employee@goalpulse.com', 'Eric Employee', 'EMPLOYEE', '$2b$10$Mbx1KboLT7Kk5GuzuNatc.WUTqGLb3hnJQPVIUaW4wbcks3mm.Ok2', v_mgr_id, 'Sales')
+  VALUES ('employee@goalkeeper.com', 'Eric Employee', 'EMPLOYEE', '$2b$10$Mbx1KboLT7Kk5GuzuNatc.WUTqGLb3hnJQPVIUaW4wbcks3mm.Ok2', v_mgr_id, 'Sales')
   RETURNING id INTO v_employee_id;
 
   INSERT INTO users (email, name, role, password_hash, manager_id, department)
-  VALUES ('priya@goalpulse.com', 'Priya Sharma', 'EMPLOYEE', '$2b$10$Mbx1KboLT7Kk5GuzuNatc.WUTqGLb3hnJQPVIUaW4wbcks3mm.Ok2', v_mgr_id, 'Sales')
+  VALUES ('priya@goalkeeper.com', 'Priya Sharma', 'EMPLOYEE', '$2b$10$Mbx1KboLT7Kk5GuzuNatc.WUTqGLb3hnJQPVIUaW4wbcks3mm.Ok2', v_mgr_id, 'Sales')
   RETURNING id INTO v_priya_id;
 
   INSERT INTO users (email, name, role, password_hash, manager_id, department)
-  VALUES ('ravi@goalpulse.com', 'Ravi Menon', 'EMPLOYEE', '$2b$10$Mbx1KboLT7Kk5GuzuNatc.WUTqGLb3hnJQPVIUaW4wbcks3mm.Ok2', v_mgr_id, 'Operations')
+  VALUES ('ravi@goalkeeper.com', 'Ravi Menon', 'EMPLOYEE', '$2b$10$Mbx1KboLT7Kk5GuzuNatc.WUTqGLb3hnJQPVIUaW4wbcks3mm.Ok2', v_mgr_id, 'Operations')
   RETURNING id INTO v_ravi_id;
 
   -- Thrust areas
@@ -259,21 +329,21 @@ BEGIN
   ) ON COMMIT DROP;
 
   INSERT INTO demo_goal_templates (email, sort_order, title, uom_type, target_value, weightage, thrust_area) VALUES
-    ('admin@goalpulse.com', 1, 'Expand partner pipeline', 'Numeric', '1500000', 40, 'Revenue Growth'),
-    ('admin@goalpulse.com', 2, 'Governance audit completion', 'Zero', '0', 35, 'Compliance & Risk'),
-    ('admin@goalpulse.com', 3, 'AI enablement rollout', 'Percentage', '80', 25, 'Innovation'),
-    ('manager@goalpulse.com', 1, 'Quarterly team revenue', 'Numeric', '900000', 20, 'Revenue Growth'),
-    ('manager@goalpulse.com', 2, 'Coach and unblock team', 'Zero', '0', 30, 'People Development'),
-    ('manager@goalpulse.com', 3, 'Improve review turnaround', 'Percentage', '95', 30, 'Operational Efficiency'),
-    ('employee@goalpulse.com', 1, 'New pipeline creation', 'Numeric', '1200000', 40, 'Revenue Growth'),
-    ('employee@goalpulse.com', 2, 'Customer retention', 'Percentage', '96', 35, 'Customer Satisfaction'),
-    ('employee@goalpulse.com', 3, 'Compliance training', 'Zero', '0', 25, 'Compliance & Risk'),
-    ('priya@goalpulse.com', 1, 'Enterprise expansion ARR', 'Numeric', '600000', 40, 'Revenue Growth'),
-    ('priya@goalpulse.com', 2, 'Close enterprise accounts', 'Numeric', '12', 35, 'Customer Satisfaction'),
-    ('priya@goalpulse.com', 3, 'Launch upsell playbook', 'Percentage', '85', 25, 'Innovation'),
-    ('ravi@goalpulse.com', 1, 'Certify on product stack', 'Zero', '0', 35, 'People Development'),
-    ('ravi@goalpulse.com', 2, 'Reduce resolution time', 'Percentage', '80', 40, 'Operational Efficiency'),
-    ('ravi@goalpulse.com', 3, 'Reduce incident repeat rate', 'Percentage', '90', 25, 'Compliance & Risk');
+    ('admin@goalkeeper.com', 1, 'Expand partner pipeline', 'Numeric', '1500000', 40, 'Revenue Growth'),
+    ('admin@goalkeeper.com', 2, 'Governance audit completion', 'Zero', '0', 35, 'Compliance & Risk'),
+    ('admin@goalkeeper.com', 3, 'AI enablement rollout', 'Percentage', '80', 25, 'Innovation'),
+    ('manager@goalkeeper.com', 1, 'Quarterly team revenue', 'Numeric', '900000', 20, 'Revenue Growth'),
+    ('manager@goalkeeper.com', 2, 'Coach and unblock team', 'Zero', '0', 30, 'People Development'),
+    ('manager@goalkeeper.com', 3, 'Improve review turnaround', 'Percentage', '95', 30, 'Operational Efficiency'),
+    ('employee@goalkeeper.com', 1, 'New pipeline creation', 'Numeric', '1200000', 40, 'Revenue Growth'),
+    ('employee@goalkeeper.com', 2, 'Customer retention', 'Percentage', '96', 35, 'Customer Satisfaction'),
+    ('employee@goalkeeper.com', 3, 'Compliance training', 'Zero', '0', 25, 'Compliance & Risk'),
+    ('priya@goalkeeper.com', 1, 'Enterprise expansion ARR', 'Numeric', '600000', 40, 'Revenue Growth'),
+    ('priya@goalkeeper.com', 2, 'Close enterprise accounts', 'Numeric', '12', 35, 'Customer Satisfaction'),
+    ('priya@goalkeeper.com', 3, 'Launch upsell playbook', 'Percentage', '85', 25, 'Innovation'),
+    ('ravi@goalkeeper.com', 1, 'Certify on product stack', 'Zero', '0', 35, 'People Development'),
+    ('ravi@goalkeeper.com', 2, 'Reduce resolution time', 'Percentage', '80', 40, 'Operational Efficiency'),
+    ('ravi@goalkeeper.com', 3, 'Reduce incident repeat rate', 'Percentage', '90', 25, 'Compliance & Risk');
 
   FOR cycle_row IN
     SELECT * FROM (VALUES
@@ -292,17 +362,17 @@ BEGIN
 
     FOR user_row IN
       SELECT * FROM (VALUES
-        ('admin@goalpulse.com', v_admin_id, 'ADMIN'),
-        ('manager@goalpulse.com', v_mgr_id, 'MANAGER'),
-        ('employee@goalpulse.com', v_employee_id, 'EMPLOYEE'),
-        ('priya@goalpulse.com', v_priya_id, 'EMPLOYEE'),
-        ('ravi@goalpulse.com', v_ravi_id, 'EMPLOYEE')
+        ('admin@goalkeeper.com', v_admin_id, 'ADMIN'),
+        ('manager@goalkeeper.com', v_mgr_id, 'MANAGER'),
+        ('employee@goalkeeper.com', v_employee_id, 'EMPLOYEE'),
+        ('priya@goalkeeper.com', v_priya_id, 'EMPLOYEE'),
+        ('ravi@goalkeeper.com', v_ravi_id, 'EMPLOYEE')
       ) AS u(email, id, role)
     LOOP
       IF cycle_row.status = 'OPEN' THEN
         v_status := CASE user_row.email
-          WHEN 'employee@goalpulse.com' THEN 'APPROVED'
-          WHEN 'priya@goalpulse.com' THEN 'APPROVED'
+          WHEN 'employee@goalkeeper.com' THEN 'APPROVED'
+          WHEN 'priya@goalkeeper.com' THEN 'APPROVED'
           ELSE 'DRAFT'
         END;
       ELSE
@@ -331,10 +401,10 @@ BEGIN
           ELSE 81
         END
         + CASE user_row.email
-          WHEN 'admin@goalpulse.com' THEN 6
-          WHEN 'manager@goalpulse.com' THEN 4
-          WHEN 'employee@goalpulse.com' THEN 0
-          WHEN 'priya@goalpulse.com' THEN 8
+          WHEN 'admin@goalkeeper.com' THEN 6
+          WHEN 'manager@goalkeeper.com' THEN 4
+          WHEN 'employee@goalkeeper.com' THEN 0
+          WHEN 'priya@goalkeeper.com' THEN 8
           ELSE -5
         END
         + (tpl_row.sort_order * 2);

@@ -75,7 +75,7 @@ function BrandMark() {
   return (
     <Link to="/" className="bt-brand">
       <div className="bt-brand-icon">G</div>
-      GoalPulse
+      GoalKeeper
     </Link>
   );
 }
@@ -134,7 +134,7 @@ export default function Home() {
           <div className="bt-hero-content">
             <h1>Quarterly goals without the spreadsheet <span>chaos</span></h1>
             <p className="anim-fade-up anim-delay-1">
-              GoalPulse helps employees draft goal sheets, managers review them,
+              GoalKeeper helps employees draft goal sheets, managers review them,
               and admins track progress, approvals, and performance in one place.
             </p>
             <div className="bt-hero-actions anim-fade-up anim-delay-2">
@@ -168,7 +168,7 @@ export default function Home() {
               </div>
             </div>
             <div className="bt-pink-image-wrap anim-fade-up anim-delay-2">
-              <img src="/dashboard.webp" alt="GoalPulse dashboard" />
+              <img src="/dashboard.webp" alt="GoalKeeper dashboard" />
             </div>
           </div>
         </section>
@@ -245,7 +245,7 @@ export default function Home() {
         <section className="bt-cta" id="contact">
           <div className="bt-container anim-fade-up">
             <h2>Bring your goals, approvals, and check-ins into one flow</h2>
-            <Link to="/login" className="bt-cta-btn anim-fade-up anim-delay-1">Open GoalPulse</Link>
+            <Link to="/login" className="bt-cta-btn anim-fade-up anim-delay-1">Open GoalKeeper</Link>
           </div>
         </section>
       </main>
@@ -282,7 +282,7 @@ export default function Home() {
           </div>
         </div>
         <div className="bt-copyright">
-          (c) {new Date().getFullYear()} GoalPulse. All rights reserved.
+          (c) {new Date().getFullYear()} GoalKeeper. All rights reserved.
         </div>
       </footer>
     </div>

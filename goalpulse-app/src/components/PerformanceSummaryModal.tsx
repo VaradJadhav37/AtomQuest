@@ -81,7 +81,7 @@ export default function PerformanceSummaryModal({
       }
     };
 
-    addText('GoalPulse Performance Summary', 18, '#111827', { bold: true, gapAfter: 5 });
+    addText('GoalKeeper Performance Summary', 18, '#111827', { bold: true, gapAfter: 5 });
     addText(`${data?.user?.name || 'Employee'}  |  ${data?.cycle?.name || 'Cycle'}`, 11, '#475569', { bold: true, gapAfter: 4 });
     addText(`Manager: ${data?.manager?.name || 'N/A'}`, 10, '#64748b', { gapAfter: 2 });
     addText(`Completion: ${data?.completionRate ?? 0}%  |  Overall score: ${data?.overallScore ?? 0}%`, 10, '#64748b', { gapAfter: 4 });
@@ -136,7 +136,7 @@ export default function PerformanceSummaryModal({
       addText(`${goal.title}: ${goal.score}%`, 10, '#334155', { gapAfter: 1 });
     });
 
-    triggerPdfDownload(pdf, `GoalPulse_Performance_Summary_${data?.user?.name || 'Employee'}.pdf`);
+    triggerPdfDownload(pdf, `GoalKeeper_Performance_Summary_${data?.user?.name || 'Employee'}.pdf`);
   };
 
   return (

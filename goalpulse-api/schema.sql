@@ -1,4 +1,4 @@
--- GoalPulse Schema for Supabase PostgreSQL
+-- GoalKeeper Schema for Supabase PostgreSQL
 -- Run via: node src/migrate.js
 
 CREATE TABLE IF NOT EXISTS users (
@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   manager_id  INTEGER REFERENCES users(id),
   department  TEXT DEFAULT 'General',
+  is_active   BOOLEAN NOT NULL DEFAULT true,
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -41,9 +42,20 @@ CREATE TABLE IF NOT EXISTS goal_sheets (
   UNIQUE(employee_id, cycle_id)
 );
 
+CREATE TABLE IF NOT EXISTS teams (
+  id          SERIAL PRIMARY KEY,
+  name        VARCHAR(100) NOT NULL,
+  description TEXT DEFAULT '',
+  manager_id  INTEGER NOT NULL REFERENCES users(id),
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  is_active   BOOLEAN NOT NULL DEFAULT true,
+  UNIQUE(manager_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS goals (
   id            SERIAL PRIMARY KEY,
   goal_sheet_id INTEGER NOT NULL REFERENCES goal_sheets(id) ON DELETE CASCADE,
+  team_id       INTEGER REFERENCES teams(id),
   title         TEXT NOT NULL,
   uom_type      TEXT NOT NULL CHECK(uom_type IN ('Numeric','Percentage','Timeline','Zero')),
   target_value  TEXT NOT NULL,
@@ -51,6 +63,27 @@ CREATE TABLE IF NOT EXISTS goals (
   thrust_area   TEXT DEFAULT 'General',
   description   TEXT DEFAULT '',
   created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+  id          SERIAL PRIMARY KEY,
+  team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  employee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at   TIMESTAMPTZ DEFAULT NOW(),
+  status      TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'removed')),
+  UNIQUE(team_id, employee_id)
+);
+
+CREATE TABLE IF NOT EXISTS team_join_requests (
+  id               SERIAL PRIMARY KEY,
+  team_id          INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  employee_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requested_at     TIMESTAMPTZ DEFAULT NOW(),
+  status           TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+  reviewed_by      INTEGER REFERENCES users(id),
+  reviewed_at      TIMESTAMPTZ,
+  rejection_reason TEXT DEFAULT '',
+  UNIQUE(team_id, employee_id, status)
 );
 
 CREATE TABLE IF NOT EXISTS goal_achievements (
@@ -114,3 +147,21 @@ CREATE TABLE IF NOT EXISTS escalation_events (
     resolved BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ai_telemetry (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    total_requests INTEGER NOT NULL DEFAULT 0,
+    cache_hits INTEGER NOT NULL DEFAULT 0,
+    cache_misses INTEGER NOT NULL DEFAULT 0,
+    estimated_spend NUMERIC(10, 4) NOT NULL DEFAULT 0,
+    routes_json JSONB DEFAULT '{}'::jsonb,
+    models_json JSONB DEFAULT '{}'::jsonb,
+    last_request_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Insert the singleton row if it doesn't exist
+INSERT INTO ai_telemetry (id, total_requests, cache_hits, cache_misses, estimated_spend)
+VALUES (1, 0, 0, 0, 0)
+ON CONFLICT (id) DO NOTHING;
+

@@ -39,9 +39,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const email = clerkUser?.primaryEmailAddress?.emailAddress?.toLowerCase().trim();
 
     if (!isSignedIn || !email) {
-      localStorage.removeItem('gp_clerk_email');
-      const storedUser = localStorage.getItem('gp_user');
-      const token = localStorage.getItem('gp_token');
+      localStorage.removeItem('gk_clerk_email');
+      const storedUser = localStorage.getItem('gk_user');
+      const token = localStorage.getItem('gk_token');
       if (storedUser && token) {
         const legacyUser = JSON.parse(storedUser) as AuthUser;
         setUser(legacyUser);
@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    localStorage.setItem('gp_clerk_email', email);
+    localStorage.setItem('gk_clerk_email', email);
     let cancelled = false;
 
     const syncUser = async () => {
@@ -84,17 +84,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string) => {
     const res = await api.post('/api/auth/login', { email, password });
     const { token, user: u } = res.data;
-    localStorage.setItem('gp_token', token);
-    localStorage.setItem('gp_user', JSON.stringify(u));
-    localStorage.removeItem('gp_clerk_email');
+    localStorage.setItem('gk_token', token);
+    localStorage.setItem('gk_user', JSON.stringify(u));
+    localStorage.removeItem('gk_clerk_email');
     setUser(u);
     setRole(u.role);
   };
 
   const logout = async () => {
-    localStorage.removeItem('gp_clerk_email');
-    localStorage.removeItem('gp_token');
-    localStorage.removeItem('gp_user');
+    localStorage.removeItem('gk_clerk_email');
+    localStorage.removeItem('gk_token');
+    localStorage.removeItem('gk_user');
     setUser(null);
     setRole('EMPLOYEE');
     await clerk.signOut();

@@ -62,9 +62,9 @@ export default function Login({ mode = 'sign-in' }: { mode?: AuthMode }) {
   const [error, setError] = useState<string | null>(null);
 
   const demoAccounts = [
-    { role: 'Employee', email: 'employee@goalpulse.com' },
-    { role: 'Manager', email: 'manager@goalpulse.com' },
-    { role: 'Admin', email: 'admin@goalpulse.com' },
+    { role: 'Employee', email: 'employee@goalkeeper.com' },
+    { role: 'Manager', email: 'manager@goalkeeper.com' },
+    { role: 'Admin', email: 'admin@goalkeeper.com' },
   ];
   const activeRole = demoAccounts.find(acc => acc.email === email)?.role ?? null;
   const clerkActionLabel = mode === 'sign-in' ? 'Sign in with Clerk' : 'Sign up with Clerk';
@@ -102,7 +102,7 @@ export default function Login({ mode = 'sign-in' }: { mode?: AuthMode }) {
       <section className="login-hero">
         <div className="login-brandbar anim-login-rise">
           <SmallLogo />
-          <span className="login-brandname">GoalPulse</span>
+          <span className="login-brandname">GoalKeeper</span>
         </div>
 
         <div className="login-hero-copy anim-login-rise" style={{ animationDelay: '0.08s' }}>
@@ -128,7 +128,7 @@ export default function Login({ mode = 'sign-in' }: { mode?: AuthMode }) {
             <div className="login-card-badge">{mode === 'sign-in' ? 'Secure access' : 'Create access'}</div>
             <div className="login-card-brand">
               <SmallLogo />
-              <span>GoalPulse</span>
+              <span>GoalKeeper</span>
             </div>
             <h2>{mode === 'sign-in' ? 'Sign in' : 'Create account'}</h2>
             <p>{mode === 'sign-in' ? 'Use one of the seeded demo accounts below to enter the app fast.' : 'Use one of the seeded demo accounts below or create a new account.'}</p>
@@ -197,7 +197,7 @@ export default function Login({ mode = 'sign-in' }: { mode?: AuthMode }) {
             {footerPrompt} <Link to={footerLinkTo}>{footerLinkLabel}</Link>
           </div>
           <div className="login-secured">
-            Secured by <span>GoalPulse</span>
+            Secured by <span>GoalKeeper</span>
           </div>
         </div>
       </section>

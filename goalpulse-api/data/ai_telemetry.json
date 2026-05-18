@@ -1,0 +1,13 @@
+{
+  "totalRequests": 1,
+  "cacheHits": 0,
+  "cacheMisses": 1,
+  "byRoute": {
+    "coach": 1
+  },
+  "byModel": {
+    "llama-3.1-8b-instant": 1
+  },
+  "estimatedSpend": 0,
+  "lastRequestAt": "2026-05-18T13:43:01.033Z"
+}

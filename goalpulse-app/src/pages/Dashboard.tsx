@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AreaChart,
@@ -16,6 +17,7 @@ import {
   LabelList,
 } from 'recharts';
 import { useAuth } from '../context/AuthContext';
+import TeamJoinRequestModal from '../components/TeamJoinRequestModal';
 import api from '../lib/api';
 import {
   Target,
@@ -186,6 +188,7 @@ function MetricCard({
             color: isTrendUp ? PALETTE.green : PALETTE.red,
             fontSize: 12,
             fontWeight: 700,
+            whiteSpace: 'nowrap',
           }}
         >
           {isTrendUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
@@ -250,6 +253,7 @@ function ShellCard({
 
 export default function Dashboard() {
   const { user, role } = useAuth();
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
 
   const { data: metrics, isLoading: metricsLoading, error: metricsError } = useQuery<Metrics>({
     queryKey: ['dashboardMetrics'],
@@ -259,6 +263,12 @@ export default function Dashboard() {
   const { data: mySheet, isLoading: sheetLoading } = useQuery({
     queryKey: ['myGoalSheet'],
     queryFn: () => api.get('/api/goal-sheets/mine').then(r => r.data),
+  });
+
+  const { data: myTeams } = useQuery({
+    queryKey: ['myTeams'],
+    queryFn: () => api.get('/api/teams/my/summary').then(r => r.data),
+    enabled: role === 'EMPLOYEE',
   });
 
   const { data: executive, isLoading: executiveLoading } = useQuery({
@@ -345,6 +355,7 @@ export default function Dashboard() {
                 fontWeight: 800,
                 letterSpacing: '0.06em',
                 textTransform: 'uppercase',
+                whiteSpace: 'nowrap',
               }}
             >
               <span style={{ width: 8, height: 8, borderRadius: 999, background: metrics?.cycle?.status === 'OPEN' ? PALETTE.green : '#94a3b8' }} />
@@ -473,13 +484,13 @@ export default function Dashboard() {
               extra={<GoalStatusPill status={mySheetStatus} />}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ padding: '8px 12px', borderRadius: 999, background: '#f8fafc', color: '#0f172a', fontSize: 12, fontWeight: 700 }}>
+                <span style={{ padding: '8px 12px', borderRadius: 999, background: '#f8fafc', color: '#0f172a', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   {cycleWindow?.canWrite ? 'Editable now' : cycleWindow?.reason || 'Read only'}
                 </span>
-                <span style={{ padding: '8px 12px', borderRadius: 999, background: '#f8fafc', color: '#0f172a', fontSize: 12, fontWeight: 700 }}>
+                <span style={{ padding: '8px 12px', borderRadius: 999, background: '#f8fafc', color: '#0f172a', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   {myGoals.length} goals
                 </span>
-                <span style={{ padding: '8px 12px', borderRadius: 999, background: '#f8fafc', color: '#0f172a', fontSize: 12, fontWeight: 700 }}>
+                <span style={{ padding: '8px 12px', borderRadius: 999, background: '#f8fafc', color: '#0f172a', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   {myTotalWeightage}% weightage
                 </span>
               </div>
@@ -513,6 +524,85 @@ export default function Dashboard() {
               />
             </div>
           </div>
+        </div>
+      )}
+
+      {role === 'EMPLOYEE' && myTeams && (
+        <div style={{ marginBottom: 24 }}>
+          <ShellCard
+            title="My Teams"
+            subtitle="Team memberships and join requests"
+            extra={
+              <button
+                onClick={() => setJoinModalOpen(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 12px',
+                  borderRadius: 12,
+                  border: 'none',
+                  background: '#0f172a',
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                <Users size={16} />
+                Request Join
+              </button>
+            }
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14, marginBottom: 16 }}>
+              {(myTeams.memberships || []).map((membership: any) => (
+                <div key={membership.id} style={{ padding: 18, borderRadius: 18, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>{membership.team?.name}</div>
+                  <div style={{ marginTop: 6, fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+                    Managed by {membership.team?.manager?.name || 'N/A'}
+                  </div>
+                  <div style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999, background: '#ecfdf5', color: '#166534', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                    Active member
+                  </div>
+                </div>
+              ))}
+              {!myTeams.memberships?.length && (
+                <div style={{ gridColumn: '1 / -1', padding: 18, borderRadius: 18, background: '#f8fafc', border: '1px dashed #cbd5e1', color: '#64748b' }}>
+                  You are not part of any teams yet.
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#475569', marginBottom: 10 }}>Requests</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {(myTeams.requests || []).map((request: any) => (
+                  <div key={request.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, padding: '12px 14px', borderRadius: 14, background: '#fff', border: '1px solid #e2e8f0' }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{request.team?.name}</div>
+                      <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>Requested {new Date(request.requested_at).toLocaleDateString()}</div>
+                    </div>
+                    <span style={{
+                      padding: '6px 10px',
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      background: request.status === 'approved' ? '#f0fdf4' : request.status === 'rejected' ? '#fef2f2' : '#eff6ff',
+                      color: request.status === 'approved' ? '#166534' : request.status === 'rejected' ? '#b91c1c' : '#1d4ed8',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {request.status}
+                    </span>
+                  </div>
+                ))}
+                {!myTeams.requests?.length && (
+                  <div style={{ padding: 16, borderRadius: 14, background: '#fff', border: '1px solid #e2e8f0', color: '#64748b' }}>
+                    No outstanding requests.
+                  </div>
+                )}
+              </div>
+            </div>
+          </ShellCard>
         </div>
       )}
 
@@ -757,46 +847,48 @@ export default function Dashboard() {
       )}
 
       {role === 'EMPLOYEE' && myGoals.length > 0 && (
-        <ShellCard title="My goals this cycle" subtitle="A grounded view of your current objectives">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {myGoals.map((g: any) => (
-              <div
-                key={g.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 16,
-                  padding: '16px 18px',
-                  background: '#f8fafc',
-                  borderRadius: 18,
-                  border: '1px solid #e2e8f0',
-                }}
-              >
+        <div style={{ marginBottom: 24 }}>
+          <ShellCard title="My goals this cycle" subtitle="A grounded view of your current objectives">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {myGoals.map((g: any) => (
                 <div
+                  key={g.id}
                   style={{
-                    width: 12,
-                    height: 12,
-                    background: THRUST_COLORS[g.thrust_area] || '#64748b',
-                    borderRadius: '50%',
-                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '16px 18px',
+                    background: '#f8fafc',
+                    borderRadius: 18,
+                    border: '1px solid #e2e8f0',
                   }}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>{g.title}</div>
-                  <div style={{ fontSize: 13, color: '#64748b', marginTop: 5 }}>
-                    {g.thrust_area} · Target: {g.target_value}
+                >
+                  <div
+                    style={{
+                      width: 12,
+                      height: 12,
+                      background: THRUST_COLORS[g.thrust_area] || '#64748b',
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>{g.title}</div>
+                    <div style={{ fontSize: 13, color: '#64748b', marginTop: 5 }}>
+                      {g.thrust_area} · Target: {g.target_value}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontFamily: DISPLAY, fontSize: 26, fontWeight: 400, letterSpacing: '0.02em', color: '#0f172a' }}>
+                      {g.weightage}%
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>weight</div>
                   </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: DISPLAY, fontSize: 26, fontWeight: 400, letterSpacing: '0.02em', color: '#0f172a' }}>
-                    {g.weightage}%
-                  </div>
-                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>weight</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </ShellCard>
+              ))}
+            </div>
+          </ShellCard>
+        </div>
       )}
 
       {metricsError && (
@@ -814,6 +906,8 @@ export default function Dashboard() {
           <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>Ensure the API is running on port 3001.</div>
         </div>
       )}
+
+      {joinModalOpen && <TeamJoinRequestModal onClose={() => setJoinModalOpen(false)} />}
     </div>
   );
 }
@@ -830,6 +924,7 @@ function MiniPill({ label }: { label: string }) {
         fontWeight: 800,
         letterSpacing: '0.08em',
         textTransform: 'uppercase',
+        whiteSpace: 'nowrap',
       }}
     >
       {label}
@@ -856,6 +951,7 @@ function GoalStatusPill({ status }: { status: string }) {
         fontWeight: 800,
         letterSpacing: '0.08em',
         textTransform: 'uppercase',
+        whiteSpace: 'nowrap',
       }}
     >
       {value.label}

@@ -1,4 +1,4 @@
-// src/index.js — GoalPulse API server
+// src/index.js — GoalKeeper API server
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -28,7 +28,7 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-goalpulse-email'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-goalkeeper-email'],
 };
 
 app.use(cors(corsOptions));
@@ -36,7 +36,7 @@ app.options(/.*/, cors(corsOptions));
 app.use(express.json());
 app.get('/', (req, res) => {
   res.json({
-    service: 'GoalPulse API',
+    service: 'GoalKeeper API',
     status: 'ok',
     health: '/health',
     debug: '/api/debug/routes',
@@ -51,13 +51,15 @@ app.use('/api/goal-sheets', require('./routes/goals'));
 app.use('/api/goals', require('./routes/goals'));
 app.use('/api/checkins', require('./routes/checkins'));
 app.use('/api/team', require('./routes/team'));
+app.use('/api/teams', require('./routes/teams'));
+app.use('/api/v1/teams', require('./routes/teams'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/reports', require('./routes/reports'));
 
 // ── Health ────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', ts: new Date().toISOString(), service: 'GoalPulse API' });
+  res.json({ status: 'ok', ts: new Date().toISOString(), service: 'GoalKeeper API' });
 });
 
 // ── 404 handler ───────────────────────────────────────────────────────────
@@ -86,7 +88,7 @@ app.get('/api/debug/routes', (req, res) => {
   const routes = collectRoutes(stack);
 
   res.json({
-    service: 'GoalPulse API',
+    service: 'GoalKeeper API',
     pid: process.pid,
     node: process.version,
     env: process.env.NODE_ENV || 'development',
@@ -105,6 +107,6 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🚀 GoalPulse API running on http://localhost:${PORT}`);
+  console.log(`🚀 GoalKeeper API running on http://localhost:${PORT}`);
   console.log(`📊 Health: http://localhost:${PORT}/health`);
 });

@@ -4,8 +4,8 @@ const path = require('path');
 
 const telemetryFile = path.join(__dirname, '..', '..', 'data', 'ai_telemetry.json');
 
-const aiCache = global.__goalpulseAiCache || new Map();
-global.__goalpulseAiCache = aiCache;
+const aiCache = global.__goalkeeperAiCache || new Map();
+global.__goalkeeperAiCache = aiCache;
 
 let initialMetrics = {
   totalRequests: 0,
@@ -17,7 +17,7 @@ let initialMetrics = {
   lastRequestAt: null,
 };
 
-if (!global.__goalpulseAiMetrics) {
+if (!global.__goalkeeperAiMetrics) {
   try {
     if (!fs.existsSync(path.dirname(telemetryFile))) {
       fs.mkdirSync(path.dirname(telemetryFile), { recursive: true });
@@ -30,8 +30,8 @@ if (!global.__goalpulseAiMetrics) {
   }
 }
 
-const aiMetrics = global.__goalpulseAiMetrics || initialMetrics;
-global.__goalpulseAiMetrics = aiMetrics;
+const aiMetrics = global.__goalkeeperAiMetrics || initialMetrics;
+global.__goalkeeperAiMetrics = aiMetrics;
 
 function sha256(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex');

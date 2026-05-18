@@ -1,6 +1,6 @@
 const express = require('express');
 const { requireAuth } = require('./auth');
-const { cacheKey, getCachedValue, setCachedValue, recordAiMetric } = require('../services/goalpulse');
+const { cacheKey, getCachedValue, setCachedValue, recordAiMetric } = require('../services/goalkeeper');
 
 const router = express.Router();
 
