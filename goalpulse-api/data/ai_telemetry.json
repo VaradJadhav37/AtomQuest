@@ -1,15 +1,15 @@
 {
-  "totalRequests": 36,
+  "totalRequests": 37,
   "cacheHits": 7,
-  "cacheMisses": 29,
+  "cacheMisses": 30,
   "byRoute": {
-    "coach": 33,
+    "coach": 34,
     "rewrite-goal": 3
   },
   "byModel": {
     "llama-3.1-8b-instant": 16,
-    "mixtral-8x7b-32768": 20
+    "mixtral-8x7b-32768": 21
   },
   "estimatedSpend": 0,
-  "lastRequestAt": "2026-05-18T22:58:49.336Z"
+  "lastRequestAt": "2026-05-18T23:43:59.275Z"
 }

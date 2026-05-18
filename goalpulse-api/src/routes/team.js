@@ -14,10 +14,9 @@ router.get('/sheets', requireAuth, async (req, res) => {
     const { data: cycle } = await supabase.from('cycles').select('*').eq('status', 'OPEN').order('year', { ascending: false }).limit(1).maybeSingle();
     if (!cycle) return res.status(404).json({ error: 'No active cycle' });
 
-    const { data: directReports } = await supabase
-      .from('users')
-      .select('id, name, email, department')
-      .eq('manager_id', req.user.id);
+    const directReports = req.user.role === 'ADMIN'
+      ? ((await supabase.from('users').select('id, name, email, department').eq('role', 'EMPLOYEE')).data || [])
+      : ((await supabase.from('users').select('id, name, email, department').eq('manager_id', req.user.id)).data || []);
 
     const sheets = await Promise.all((directReports || []).map(async emp => {
       const { data: sheet } = await supabase.from('goal_sheets').select('*').eq('employee_id', emp.id).eq('cycle_id', cycle.id).maybeSingle();

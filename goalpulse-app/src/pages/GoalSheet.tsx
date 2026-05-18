@@ -63,7 +63,7 @@ export default function GoalSheet() {
   if (!data?.sheet) return <ErrorState message="No goal sheet found for the current cycle." />;
 
   const { cycle, sheet } = data;
-  const { goals, totalWeightage, status } = sheet;
+  const { goals, status } = sheet;
   const teamGoals = goals.filter((g: any) => g.team_id != null);
   const individualGoals = goals.filter((g: any) => g.team_id == null);
   const exportPDF = async () => {
@@ -119,12 +119,12 @@ export default function GoalSheet() {
         </div>
       )}
       {/* Header */}
-      <div className="goal-sheet-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+      <div className="goal-sheet-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px', gap: 16 }}>
         <div>
           <div style={{ fontSize: '12px', fontWeight: '600', color: '#9ca3af', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '4px' }}>
             {cycle.name} &nbsp;·&nbsp; {cycle.status === 'OPEN' ? '🟢 Cycle Open' : '🔴 Cycle Closed'}
           </div>
-          <h1 className="goal-sheet-title" style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '56px', fontWeight: '400', color: '#111827', letterSpacing: '0.03em', lineHeight: 1 }}>My Goals</h1>
+          <h1 className="goal-sheet-title" style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 'clamp(36px, 6vw, 56px)', fontWeight: '400', color: '#111827', letterSpacing: '0.03em', lineHeight: 1 }}>My Goals</h1>
           <div style={{ fontSize: '13px', color: '#9ca3af', marginTop: '4px' }}>{cycle.open_date} → {cycle.close_date}</div>
         </div>
 

@@ -203,15 +203,15 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-      <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px rgba(0,0,0,0.15)' }}>
+    <div className="goal-wizard-shell" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+      <div className="goal-wizard-main" style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px rgba(0,0,0,0.15)' }}>
 
         {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '24px 28px', borderBottom: '1px solid #f3f4f6' }}>
           <div>
             <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '24px', fontWeight: '700', color: '#111827' }}>{editGoal ? 'Edit Goal' : 'New Goal'}</h2>
             <p style={{ fontSize: '13px', color: '#9ca3af', fontFamily: "'Inter', system-ui, sans-serif", marginTop: '2px' }}>
-              {editGoal ? 'Update goal details' : `Remaining weightage: ${remainingWeightage}%`}
+              {editGoal ? 'Update goal details' : `Remaining weightage: ${availableWeightage}%`}
             </p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -239,9 +239,9 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
           </div>
         </div>
 
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div className="goal-wizard-content" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Main Form */}
-          <div style={{ flex: 3, overflowY: 'auto', padding: '24px 28px', borderRight: '1px solid #f3f4f6' }}>
+          <div className="goal-wizard-form" style={{ flex: 3, overflowY: 'auto', padding: '24px 28px', borderRight: '1px solid #f3f4f6' }}>
             <form onSubmit={handleSubmit}>
               {/* Title */}
               <div style={{ marginBottom: '16px' }}>
@@ -252,7 +252,7 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
               </div>
 
               {/* 2-col grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+              <div className="goal-wizard-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 <div>
                   <label style={labelStyle}>Thrust Area *</label>
                   <select value={form.thrust_area} onChange={e => setForm(f => ({ ...f, thrust_area: e.target.value }))} style={{ ...inputStyle }}>
@@ -349,7 +349,7 @@ export default function GoalWizard({ onClose, onSave, remainingWeightage, editGo
           </div>
 
           {/* AI Scorecard Side Panel */}
-          <div style={{ flex: 2, background: '#fafafa', padding: '24px 28px', overflowY: 'auto' }}>
+          <div className="goal-wizard-ai" style={{ flex: 2, background: '#fafafa', padding: '24px 28px', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
               <Sparkles size={18} color="#8b5cf6" />
               <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#111827', fontFamily: "'Inter', system-ui, sans-serif" }}>AI SMART Coach</h3>

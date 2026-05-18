@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCcw } from 'lucide-react';
 
 interface Props {
@@ -47,7 +47,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           <p style={{ fontSize: '15px', color: '#6b7280', maxWidth: '400px', marginBottom: '24px', lineHeight: 1.5 }}>
             A critical error occurred while rendering this page. We've logged the issue.
           </p>
-          {process.env.NODE_ENV !== 'production' && this.state.error && (
+          {import.meta.env.DEV && this.state.error && (
             <div style={{ background: '#111827', color: '#e5e7eb', padding: '16px', borderRadius: '12px', fontSize: '12px', textAlign: 'left', maxWidth: '600px', overflowX: 'auto', marginBottom: '32px', fontFamily: "'JetBrains Mono', monospace" }}>
               <code>{this.state.error.toString()}</code>
             </div>

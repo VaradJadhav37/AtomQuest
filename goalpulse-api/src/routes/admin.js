@@ -73,7 +73,7 @@ async function fetchCoreData(cycle) {
 
   const [usersRes, sheetsRes, goalsRes, achievementsRes, checkinsRes, auditsRes, cyclesRes] = await Promise.all([
     supabase.from('users').select('id, name, email, role, department, manager_id, created_at'),
-    supabase.from('goal_sheets').select('id, employee_id, cycle_id, status, locked_at, created_at, version'),
+    supabase.from('goal_sheets').select('id, employee_id, cycle_id, status, locked_at, created_at'),
     supabase.from('goals').select('id, goal_sheet_id, title, uom_type, target_value, weightage, thrust_area, description, created_at'),
     supabase.from('goal_achievements').select('id, goal_id, cycle_id, actual_value, score, submitted_at'),
     supabase.from('check_ins').select('id, goal_id, cycle_id, status, employee_comment, manager_comment, employee_submitted_at, manager_submitted_at'),

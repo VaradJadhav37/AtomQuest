@@ -13,7 +13,6 @@ import {
   Cloud,
   CheckCircle2,
   Activity,
-  Zap,
 } from 'lucide-react';
 
 const TOOLCHAIN = [

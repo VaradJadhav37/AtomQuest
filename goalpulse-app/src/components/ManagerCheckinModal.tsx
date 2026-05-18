@@ -37,17 +37,22 @@ export default function ManagerCheckinModal({ goal, onClose, onSave }: { goal: a
   });
 
   const generateAiComment = async () => {
-    const token = localStorage.getItem('gp_token');
+    const token = localStorage.getItem('gk_token');
     if (!token) throw new Error('Missing auth token');
 
     setIsGenerating(true);
     setManagerComment('');
 
     try {
-          const response = await fetch(`${api.defaults.baseURL}/api/ai/generate-checkin-comment?stream=1`, {
+      const baseUrl =
+        localStorage.getItem('gk_api_base_url') ||
+        import.meta.env.VITE_API_BASE_URL ||
+        'http://localhost:3001';
+      const response = await fetch(`${baseUrl}/api/ai/generate-checkin-comment?stream=1`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
+          'x-csrf-token': localStorage.getItem('gk_csrf_token') || `${Date.now()}_${Math.random().toString(36).slice(2)}`,
           'Content-Type': 'application/json',
           Accept: 'text/event-stream',
         },
@@ -123,7 +128,7 @@ export default function ManagerCheckinModal({ goal, onClose, onSave }: { goal: a
           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '24px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#0f172a', marginBottom: '12px', fontFamily: "'Inter', system-ui, sans-serif" }}>{goal.title}</h3>
             
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div className="manager-checkin-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div style={{ background: '#fff', border: '1px solid #e8eaed', padding: '12px', borderRadius: '8px' }}>
                 <div style={{ fontSize: '11px', fontWeight: '600', color: '#94a3b8', textTransform: 'uppercase' }}>Target</div>
                 <div style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', fontFamily: "'JetBrains Mono', monospace" }}>{goal.target_value} <span style={{fontSize:'12px', color:'#64748b'}}>{normalizeUomType(goal.uom_type)}</span></div>

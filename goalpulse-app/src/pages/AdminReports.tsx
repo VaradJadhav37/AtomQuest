@@ -394,7 +394,7 @@ export default function AdminReports() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '340px', overflowY: 'auto' }}>
             {auditReplay.slice(0, 20).map((event: any) => (
-              <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '170px 120px 1fr', gap: '12px', alignItems: 'flex-start', padding: '12px 14px', borderRadius: '14px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+              <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '170px 150px 1fr', gap: '12px', alignItems: 'flex-start', padding: '12px 14px', borderRadius: '14px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>{event.timestamp}</div>
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{event.user_name} · {event.role}</div>
@@ -405,12 +405,7 @@ export default function AdminReports() {
                 </div>
                 <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.6 }}>
                   <div>{event.note}</div>
-                  {(event.before || event.after) && (
-                    <div style={{ marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
-                      <div><strong style={{ color: '#0f172a' }}>Before:</strong> {event.before ? JSON.stringify(event.before) : 'n/a'}</div>
-                      <div><strong style={{ color: '#0f172a' }}>After:</strong> {event.after ? JSON.stringify(event.after) : 'n/a'}</div>
-                    </div>
-                  )}
+                  <DiffViewer before={event.before} after={event.after} />
                 </div>
               </div>
             ))}
@@ -477,10 +472,28 @@ export default function AdminReports() {
           {auditOpen && auditData && (
             <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
               {auditData.map((log: any) => (
-                <div key={log.id} style={{ display: 'flex', gap: '12px', padding: '8px 0', borderBottom: '1px solid #f3f4f6', fontSize: '12px', fontFamily: "'Inter', system-ui, sans-serif" }}>
-                  <div style={{ color: '#9ca3af', whiteSpace: 'nowrap', minWidth: '130px' }}>{log.ts}</div>
-                  <div style={{ color: '#2563eb', fontWeight: '700', minWidth: '100px' }}>{log.action}</div>
-                  <div style={{ color: '#374151', flex: 1 }}><span style={{ color: '#9ca3af' }}>{log.users?.name || 'System'}</span> · {log.detail || `${log.entity} #${log.entity_id}`}</div>
+                <div key={log.id} style={{ display: 'grid', gridTemplateColumns: '170px 150px 1fr', gap: '12px', padding: '12px 0', borderBottom: '1px solid #f3f4f6', fontSize: '12px', fontFamily: "'Inter', system-ui, sans-serif", alignItems: 'flex-start' }}>
+                  <div style={{ color: '#9ca3af' }}>{log.ts}</div>
+                  <div style={{ display: 'inline-flex', padding: '4px 8px', borderRadius: 999, background: '#eff6ff', color: '#2563eb', fontSize: '11px', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap', justifySelf: 'start' }}>{log.action}</div>
+                  <div style={{ color: '#374151' }}>
+                    <div style={{ marginBottom: '4px' }}><span style={{ color: '#9ca3af', fontWeight: 600 }}>{log.users?.name || 'System'}</span></div>
+                    {(() => {
+                      let text = log.detail || `${log.entity} #${log.entity_id}`;
+                      let parsed = null;
+                      if (typeof text === 'string' && text.trim().startsWith('{')) {
+                        try { parsed = JSON.parse(text); } catch(e){}
+                      }
+                      if (parsed && (parsed.before || parsed.after)) {
+                        return (
+                          <div>
+                            <div>{parsed.note || 'Details updated'}</div>
+                            <DiffViewer before={parsed.before} after={parsed.after} />
+                          </div>
+                        );
+                      }
+                      return <div>{text}</div>;
+                    })()}
+                  </div>
                 </div>
               ))}
             </div>
@@ -560,6 +573,50 @@ function LoadingState() {
   return (
     <div className="page-container fade-in" style={{ padding: '28px 32px' }}>
       {[1, 2, 3, 4].map(i => <div key={i} className="skeleton" style={{ height: '120px', borderRadius: '16px', marginBottom: '24px' }} />)}
+    </div>
+  );
+}
+
+function DiffViewer({ before, after }: { before: any, after: any }) {
+  if (!before && !after) return null;
+  if (!before && after) return <div style={{ background: '#f8fafc', padding: '8px 12px', borderRadius: '8px', marginTop: '10px', fontSize: '11px', fontFamily: "'JetBrains Mono', monospace", color: '#475569', border: '1px solid #e2e8f0' }}>Entity Created: {Object.keys(after).length} fields</div>;
+  if (before && !after) return <div style={{ background: '#fef2f2', padding: '8px 12px', borderRadius: '8px', marginTop: '10px', fontSize: '11px', fontWeight: 600, color: '#991b1b', border: '1px solid #fecaca' }}>Entity Deleted</div>;
+
+  const b = before || {};
+  const a = after || {};
+  const allKeys = Array.from(new Set([...Object.keys(b), ...Object.keys(a)]));
+  
+  const changes = allKeys.filter(k => JSON.stringify(b[k]) !== JSON.stringify(a[k]) && !['updated_at', 'reviewed_at', 'requested_at', 'created_at'].includes(k));
+  
+  if (changes.length === 0) return null;
+
+  const renderVal = (v: any) => {
+    if (v === undefined) return '-';
+    if (v === null) return 'null';
+    if (typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+  };
+
+  return (
+    <div style={{ marginTop: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+        <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+          <tr>
+            <th style={{ textAlign: 'left', padding: '6px 12px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', width: '30%' }}>Property</th>
+            <th style={{ textAlign: 'left', padding: '6px 12px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', width: '35%' }}>Previous</th>
+            <th style={{ textAlign: 'left', padding: '6px 12px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', width: '35%' }}>New</th>
+          </tr>
+        </thead>
+        <tbody>
+          {changes.map(k => (
+            <tr key={k} style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <td style={{ padding: '8px 12px', fontWeight: 600, color: '#475569', fontFamily: "'JetBrains Mono', monospace" }}>{k}</td>
+              <td style={{ padding: '8px 12px', color: '#ef4444', textDecoration: b[k] !== undefined ? 'line-through' : 'none', wordBreak: 'break-all' }}>{renderVal(b[k])}</td>
+              <td style={{ padding: '8px 12px', color: '#10b981', fontWeight: 600, wordBreak: 'break-all' }}>{renderVal(a[k])}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -17,6 +17,7 @@ export default function TeamDetail() {
   const [error, setError] = useState('');
   const [showWizard, setShowWizard] = useState(false);
   const [editingGoal, setEditingGoal] = useState<any>(null);
+  const canManageTeam = role === 'MANAGER' || role === 'ADMIN';
 
   const { data, isLoading } = useQuery({
     queryKey: ['teamDetail', teamId],
@@ -34,11 +35,6 @@ export default function TeamDetail() {
     queryKey: ['teamAnalytics', teamId],
     queryFn: () => api.get(`/api/teams/${teamId}/analytics`).then(r => r.data),
     enabled: !!teamId && (role === 'MANAGER' || role === 'ADMIN' || role === 'EMPLOYEE'),
-  });
-  const { data: mySheetData } = useQuery({
-    queryKey: ['mySheetForTeamGoals'],
-    queryFn: () => api.get('/api/goal-sheets/mine').then(r => r.data),
-    enabled: !!role,
   });
 
   const approveMutation = useMutation({
@@ -103,9 +99,6 @@ export default function TeamDetail() {
   const pendingRequests = data?.pendingRequests || [];
   const members = data?.members || [];
   const goals = goalsData?.goals || [];
-  const mySheetGoals = mySheetData?.sheet?.goals || [];
-  const myCurrentTotalWeightage = mySheetGoals.reduce((sum: number, g: any) => sum + Number(g.weightage || 0), 0);
-  const remainingWeightage = Math.max(0, 100 - myCurrentTotalWeightage + Number(editingGoal?.weightage || 0));
   const teamGoalsTotalWeightage = goals.reduce((sum: number, g: any) => sum + Number(g.weightage || 0), 0);
   const remainingTeamWeightage = Math.max(0, 100 - teamGoalsTotalWeightage + Number(editingGoal?.weightage || 0));
   const analytics = analyticsData?.summary || {};
@@ -123,7 +116,7 @@ export default function TeamDetail() {
     return (
       <div className="page-container fade-in" style={{ padding: '32px' }}>
         <div className="skeleton" style={{ height: '140px', borderRadius: '24px', marginBottom: '24px' }} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '24px' }}>
           <div className="skeleton" style={{ height: '400px', borderRadius: '24px' }} />
           <div className="skeleton" style={{ height: '400px', borderRadius: '24px' }} />
         </div>
@@ -201,21 +194,25 @@ export default function TeamDetail() {
                       <div style={{ marginTop: 4, fontSize: 13, color: '#64748b' }}>{request.employee?.email} · Requested {new Date(request.requested_at).toLocaleDateString()}</div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <button onClick={() => approveMutation.mutate(request.id)} style={approveButton}>
-                        <Check size={14} />
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => {
-                          const reason = window.prompt('Optional rejection reason', '');
-                          if (reason === null) return;
-                          rejectMutation.mutate({ requestId: request.id, rejection_reason: reason });
-                        }}
-                        style={rejectButton}
-                      >
-                        <X size={14} />
-                        Reject
-                      </button>
+                      {canManageTeam && (
+                        <>
+                          <button onClick={() => approveMutation.mutate(request.id)} style={approveButton}>
+                            <Check size={14} />
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => {
+                              const reason = window.prompt('Optional rejection reason', '');
+                              if (reason === null) return;
+                              rejectMutation.mutate({ requestId: request.id, rejection_reason: reason });
+                            }}
+                            style={rejectButton}
+                          >
+                            <X size={14} />
+                            Reject
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -256,7 +253,9 @@ export default function TeamDetail() {
                         <span style={memberBadge}>{member.status}</span>
                       </td>
                       <td style={td}>
-                        {Number(member.employee_id) === Number(team.manager_id) ? (
+                        {!canManageTeam ? (
+                          <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Read Only</span>
+                        ) : Number(member.employee_id) === Number(team.manager_id) ? (
                           <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Team Manager</span>
                         ) : (
                           <button
@@ -294,13 +293,15 @@ export default function TeamDetail() {
               <div style={sectionEyebrow}>Goals</div>
               <div style={sectionTitle}>Team-scoped goals</div>
             </div>
-            <button
-              onClick={() => { setEditingGoal(null); setShowWizard(true); }}
-              style={{ ...approveButton, padding: '8px 12px' }}
-            >
-              <Plus size={14} />
-              Add Team Goal
-            </button>
+            {canManageTeam && (
+              <button
+                onClick={() => { setEditingGoal(null); setShowWizard(true); }}
+                style={{ ...approveButton, padding: '8px 12px' }}
+              >
+                <Plus size={14} />
+                Add Team Goal
+              </button>
+            )}
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={table}>
@@ -321,26 +322,30 @@ export default function TeamDetail() {
                     <td style={tdMono}>{goal.checkin?.status || 'NOT_STARTED'} · {goal.achievement?.score ?? '—'}%</td>
                     <td style={tdMono}>{goal.weightage}%</td>
                     <td style={td}>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button
-                          onClick={() => { setEditingGoal(goal); setShowWizard(true); }}
-                          style={iconButton}
-                          title="Edit Goal"
-                        >
-                          <Pencil size={14} color="#64748b" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (window.confirm('Are you sure you want to delete this team goal?')) {
-                              deleteGoalMutation.mutate(goal.id);
-                            }
-                          }}
-                          style={{ ...iconButton }}
-                          title="Delete Goal"
-                        >
-                          <Trash2 size={14} color="#ef4444" />
-                        </button>
-                      </div>
+                      {canManageTeam ? (
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            onClick={() => { setEditingGoal(goal); setShowWizard(true); }}
+                            style={iconButton}
+                            title="Edit Goal"
+                          >
+                            <Pencil size={14} color="#64748b" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm('Are you sure you want to delete this team goal?')) {
+                                deleteGoalMutation.mutate(goal.id);
+                              }
+                            }}
+                            style={{ ...iconButton }}
+                            title="Delete Goal"
+                          >
+                            <Trash2 size={14} color="#ef4444" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>Read Only</span>
+                      )}
                     </td>
                   </tr>
                 ))}
