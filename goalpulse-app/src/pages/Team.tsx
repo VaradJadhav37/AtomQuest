@@ -227,7 +227,11 @@ export default function Team() {
 
       {sharedModalOpen && sheets && (
         <SharedGoalModal
-          employees={sheets.map((s: any) => s.employee)}
+          employees={sheets.map((s: any) => ({
+            ...s.employee,
+            current_weightage: Number(s.totalWeightage || 0),
+            remaining_weightage: Math.max(0, 100 - Number(s.totalWeightage || 0)),
+          }))}
           onClose={() => setSharedModalOpen(false)}
         />
       )}

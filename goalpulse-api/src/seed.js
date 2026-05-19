@@ -237,12 +237,12 @@ async function setup() {
 
       const { data: sheet, error: sheetErr } = await supabase
         .from('goal_sheets')
-        .insert({
+        .upsert({
           employee_id: userRow.id,
           cycle_id: cycleRow.id,
           status,
           locked_at,
-        })
+        }, { onConflict: 'employee_id,cycle_id' })
         .select()
         .single();
       if (sheetErr) throw sheetErr;

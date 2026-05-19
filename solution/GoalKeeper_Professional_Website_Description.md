@@ -1,4 +1,4 @@
-# GoalPulse: Enterprise Goal Setting & Performance Tracking Portal
+# GoalKeeper: Enterprise Goal Setting & Performance Tracking Portal
 ## Judge-Ready Website Description & Technical Specification
 
 **Last Updated:** May 2026  
@@ -28,7 +28,7 @@
 Organizations with 50–5,000 employees struggle with fragmented goal-tracking methods. Manual spreadsheets, scattered emails, and offline review cycles create organizational blind spots: managers cannot monitor team progress in real time, employees lack clarity on how their work connects to organizational priorities, and HR teams are left piecing together data at appraisal time.
 
 ### Solution: GoalPulse
-**GoalPulse** is an enterprise-grade, web-based Goal Setting & Performance Tracking Portal that eliminates these pain points. It provides:
+**GoalKeeper** is an enterprise-grade, web-based Goal Setting & Performance Tracking Portal that eliminates these pain points. It provides:
 
 - **Structured Goal Lifecycle:** From creation and manager approval through quarterly check-ins and performance visibility
 - **Real-Time Alignment:** Employees see how their goals cascade to organizational priorities
@@ -1464,7 +1464,7 @@ Scenario: Primary owner updates achievement; 2 linked recipients exist
 
 ## CONCLUSION
 
-**GoalPulse** is a production-ready enterprise goal-tracking portal that directly addresses the AtomQuest BRD with 100% Phase 1 & 2 compliance. 
+**GoalKeeper** is a production-ready enterprise goal-tracking portal that directly addresses the AtomQuest BRD with 100% Phase 1 & 2 compliance. 
 
 **Key Differentiators:**
 - ✅ All BRD Must-Haves implemented and tested

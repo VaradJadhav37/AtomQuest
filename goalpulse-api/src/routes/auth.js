@@ -90,7 +90,15 @@ async function requireAuth(req, res, next) {
   const h = req.headers.authorization;
   if (h?.startsWith('Bearer ')) {
     try {
-      req.user = jwt.verify(h.slice(7), process.env.JWT_SECRET);
+      const decoded = jwt.verify(h.slice(7), process.env.JWT_SECRET);
+      const dbUser = await getUserById(decoded.id);
+      if (!dbUser) {
+        return res.status(401).json({ error: 'Session expired. Please log in again.' });
+      }
+      if (dbUser.is_active === false) {
+        return res.status(403).json({ error: 'Account is deactivated' });
+      }
+      req.user = { ...decoded, role: dbUser.role, email: dbUser.email, name: dbUser.name };
       return next();
     } catch {
       return res.status(401).json({ error: 'Token expired or invalid' });

@@ -672,18 +672,15 @@ router.post('/escalations/evaluate', requireAuth, requireAdmin, async (req, res)
 });
 
 // POST /api/admin/seed-reset
-router.post('/seed-reset', requireAuth, requireAdmin, (req, res) => {
-  const { exec } = require('child_process');
-  const path = require('path');
-  const seedScript = path.join(__dirname, '..', 'seed.js');
-  
-  exec(`node "${seedScript}"`, (error, stdout, stderr) => {
-    if (error) {
-      console.error(`Error executing seed: ${error.message}`);
-      return res.status(500).json({ error: 'Failed to reset database' });
-    }
-    res.json({ message: 'Database reset successfully' });
-  });
+router.post('/seed-reset', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const seed = require('../seed');
+    await (typeof seed === 'function' ? seed() : Promise.resolve());
+    res.json({ ok: true, message: 'Database seeded successfully' });
+  } catch (e) {
+    console.error('Seed reset failed:', e);
+    res.status(500).json({ error: e.message || 'Failed to seed database' });
+  }
 });
 
 // GET /api/admin/thrust-areas
@@ -790,18 +787,6 @@ router.get('/report', requireAuth, requireManagerOrAdmin, async (req, res) => {
     res.json({ cycle, rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/admin/seed-reset
-router.post('/seed-reset', requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const seed = require('../seed');
-    // seed is async setup function
-    await (typeof seed === 'function' ? seed() : Promise.resolve());
-    res.json({ ok: true, message: 'Database seeded successfully' });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
   }
 });
 

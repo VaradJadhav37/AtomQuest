@@ -46,6 +46,8 @@ export default function GoalSheet() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['myGoalSheet'],
     queryFn: () => api.get('/api/goal-sheets/mine').then(r => r.data),
+    refetchInterval: 5000,
+    refetchOnWindowFocus: true,
   });
 
   const submitMutation = useMutation({

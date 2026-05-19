@@ -18,18 +18,46 @@ export default function SharedGoalModal({ employees, onClose }: { employees: any
   const qc = useQueryClient();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [form, setForm] = useState({ title: '', thrust_area: 'Revenue Growth', uom_type: 'Numeric', target_value: '', weightage: '' });
+  const [clientError, setClientError] = useState('');
 
   const submitMutation = useMutation({
     mutationFn: (data: any) => api.post('/api/goals/shared', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['teamSheets'] });
+      qc.invalidateQueries({ queryKey: ['myGoalSheet'] });
+      qc.invalidateQueries({ queryKey: ['dashboardMetrics'] });
+      qc.invalidateQueries({ queryKey: ['executiveDashboard'] });
+      qc.invalidateQueries({ queryKey: ['analyticsData'] });
       onClose();
+    },
+    onError: (err: any) => {
+      const apiError = err?.response?.data?.error;
+      setClientError(apiError || 'Unable to assign goal right now. Please try again.');
     },
   });
 
   const handleSubmit = () => {
+    setClientError('');
+    if (selectedIds.length < 1) {
+      setClientError('Select at least one employee to assign this goal.');
+      return;
+    }
+    if (!form.title.trim()) {
+      setClientError('Goal title is required.');
+      return;
+    }
+    const requestedWeightage = Number(form.weightage);
+    if (!Number.isFinite(requestedWeightage) || requestedWeightage <= 0) {
+      setClientError('Enter a valid weightage.');
+      return;
+    }
+    if (requestedWeightage > 100) {
+      setClientError('Weightage cannot exceed 100%.');
+      return;
+    }
     submitMutation.mutate({
       ...form,
+      title: form.title.trim(),
       employee_ids: selectedIds
     });
   };
@@ -75,6 +103,11 @@ export default function SharedGoalModal({ employees, onClose }: { employees: any
         </div>
 
         <div style={S.content}>
+          {(clientError || submitMutation.isError) && (
+            <div style={{ marginBottom: '16px', padding: '10px 12px', borderRadius: '10px', border: '1px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: '13px', fontWeight: 600 }}>
+              {clientError || (submitMutation.error as any)?.response?.data?.error || 'Unable to assign shared goal. Please try again.'}
+            </div>
+          )}
           <div style={{ marginBottom: '20px' }}>
             <label style={S.label}>1. Select Employees (Primary owner first)</label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
@@ -87,7 +120,7 @@ export default function SharedGoalModal({ employees, onClose }: { employees: any
                 </div>
               ))}
             </div>
-            {selectedIds.length > 0 && <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>The primary owner is responsible for checking in actuals. Those actuals will sync to all linked employees.</p>}
+            {selectedIds.length > 0 && <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>If multiple employees are selected, the primary owner checks in actuals and those values sync to linked employees.</p>}
           </div>
 
           <div style={{ marginBottom: '16px' }}>
@@ -105,6 +138,9 @@ export default function SharedGoalModal({ employees, onClose }: { employees: any
             <div>
               <label style={S.label}>Weightage (%)</label>
               <input style={S.input} type="number" min="1" max="100" value={form.weightage} onChange={e => setForm({ ...form, weightage: e.target.value })} placeholder="e.g. 25" />
+              <div style={{ marginTop: '6px', fontSize: '11px', color: '#6b7280' }}>
+                Existing individual goals auto-rebalance so total remains 100%.
+              </div>
             </div>
           </div>
 
@@ -130,10 +166,15 @@ export default function SharedGoalModal({ employees, onClose }: { employees: any
         </div>
 
         <div style={S.footer}>
+          {(clientError || submitMutation.isError) && (
+            <div style={{ marginRight: 'auto', maxWidth: '62%', fontSize: '12px', fontWeight: 600, color: '#b91c1c' }}>
+              {clientError || (submitMutation.error as any)?.response?.data?.error || 'Unable to assign goal.'}
+            </div>
+          )}
           <button onClick={onClose} style={{ padding: '10px 20px', background: '#fff', border: '1px solid #d1d5db', borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>Cancel</button>
-          <button disabled={submitMutation.isPending || selectedIds.length < 2 || !form.title || !form.weightage || !form.target_value} onClick={handleSubmit}
-            style={{ padding: '10px 20px', background: '#111827', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Users size={16} /> {submitMutation.isPending ? 'Assigning...' : 'Assign Shared Goal'}
+          <button disabled={submitMutation.isPending || selectedIds.length < 1 || !form.title || !form.weightage || !form.target_value} onClick={handleSubmit}
+            style={{ padding: '10px 20px', background: '#111827', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: '600', cursor: submitMutation.isPending ? 'not-allowed' : 'pointer', opacity: submitMutation.isPending ? 0.75 : 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Users size={16} /> {submitMutation.isPending ? 'Assigning...' : selectedIds.length > 1 ? 'Assign Shared Goal' : 'Assign Goal'}
           </button>
         </div>
       </div>

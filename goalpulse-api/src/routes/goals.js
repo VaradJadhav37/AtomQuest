@@ -54,6 +54,53 @@ async function getSheetGoals(sheetId) {
   return data || [];
 }
 
+function rebalanceWeightsToTarget(goals, targetTotal) {
+  const safeTarget = Math.max(0, Math.min(100, Number(targetTotal) || 0));
+  const total = (goals || []).reduce((sum, g) => sum + Number(g.weightage || 0), 0);
+  if (!goals || goals.length === 0 || total <= 0) return [];
+
+  const scaled = goals.map(goal => {
+    const original = Number(goal.weightage || 0);
+    const raw = (original / total) * safeTarget;
+    const floored = Math.floor(raw);
+    return { id: goal.id, raw, floored, fraction: raw - floored };
+  });
+
+  let allocated = scaled.reduce((sum, item) => sum + item.floored, 0);
+  let remaining = safeTarget - allocated;
+
+  scaled.sort((a, b) => b.fraction - a.fraction);
+  for (let i = 0; i < scaled.length && remaining > 0; i++) {
+    scaled[i].floored += 1;
+    remaining -= 1;
+  }
+
+  return scaled.map(item => ({ id: item.id, weightage: item.floored }));
+}
+
+async function rebalanceSheetForNewGoal(sheetId, newGoalWeightage) {
+  const desiredNewWeight = Number(newGoalWeightage || 0);
+  if (!Number.isFinite(desiredNewWeight) || desiredNewWeight <= 0 || desiredNewWeight > 100) {
+    const err = new Error('Weightage must be between 1 and 100');
+    err.status = 400;
+    throw err;
+  }
+
+  const { data: existingGoals } = await supabase
+    .from('goals')
+    .select('id, weightage, team_id')
+    .eq('goal_sheet_id', sheetId)
+    .order('id');
+
+  const individualGoals = (existingGoals || []).filter(g => g.team_id == null);
+  const targetForExisting = 100 - desiredNewWeight;
+  const adjusted = rebalanceWeightsToTarget(individualGoals, targetForExisting);
+
+  for (const item of adjusted) {
+    await supabase.from('goals').update({ weightage: item.weightage }).eq('id', item.id);
+  }
+}
+
 async function getSharedLinksByGoalId(goalId) {
   const { data } = await supabase
     .from('shared_goals')
@@ -206,15 +253,14 @@ router.post('/shared', requireAuth, async (req, res) => {
 
     const primaryId = employee_ids[0];
     const pSheet = await getOrCreateSheet(primaryId, cycle.id);
-    const primaryGoals = await getSheetGoals(pSheet.id);
+    const primaryGoals = (await getSheetGoals(pSheet.id)).filter(g => g.team_id == null);
     if (primaryGoals.length >= MAX_GOALS_PER_SHEET) {
       return res.status(400).json({ error: `Primary owner already has ${MAX_GOALS_PER_SHEET} goals` });
     }
-    if (primaryGoals.reduce((sum, g) => sum + Number(g.weightage || 0), 0) + weight > 100) {
-      return res.status(400).json({ error: 'Primary owner weightage would exceed 100%' });
-    }
 
     const createdGoalIds = [];
+
+    await rebalanceSheetForNewGoal(pSheet.id, weight);
 
     const { data: pGoal, error: pErr } = await supabase.from('goals').insert({
       goal_sheet_id: pSheet.id,
@@ -239,13 +285,11 @@ router.post('/shared', requireAuth, async (req, res) => {
       for (let i = 1; i < employee_ids.length; i++) {
         const employeeId = employee_ids[i];
         const lSheet = await getOrCreateSheet(employeeId, cycle.id);
-        const linkedGoals = await getSheetGoals(lSheet.id);
+        const linkedGoals = (await getSheetGoals(lSheet.id)).filter(g => g.team_id == null);
         if (linkedGoals.length >= MAX_GOALS_PER_SHEET) {
           throw new Error(`Employee ${employeeId} already has ${MAX_GOALS_PER_SHEET} goals`);
         }
-        if (linkedGoals.reduce((sum, g) => sum + Number(g.weightage || 0), 0) + weight > 100) {
-          throw new Error(`Employee ${employeeId} weightage would exceed 100%`);
-        }
+        await rebalanceSheetForNewGoal(lSheet.id, weight);
         const { data: linkedGoal, error: linkedErr } = await supabase.from('goals').insert({
           goal_sheet_id: lSheet.id,
           title,

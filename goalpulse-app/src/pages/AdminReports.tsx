@@ -119,7 +119,17 @@ export default function AdminReports() {
       qc.invalidateQueries({ queryKey: ['complianceChecklist'] });
       qc.invalidateQueries({ queryKey: ['auditReplay'] });
       qc.invalidateQueries({ queryKey: ['judgeMode'] });
-      alert('Database reset to demo data.');
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('gk_token');
+        localStorage.removeItem('gk_user');
+        localStorage.removeItem('gk_clerk_email');
+      }
+      alert('Database reset complete. Please log in again with demo credentials.');
+      window.location.href = '/login';
+    },
+    onError: (err: any) => {
+      const message = err?.response?.data?.error || 'Demo reset failed.';
+      alert(message);
     },
   });
 

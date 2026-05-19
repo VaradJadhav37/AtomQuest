@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+﻿import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -265,6 +265,8 @@ export default function Dashboard() {
   const { data: mySheet, isLoading: sheetLoading } = useQuery({
     queryKey: ['myGoalSheet'],
     queryFn: () => api.get('/api/goal-sheets/mine').then(r => r.data),
+    refetchInterval: role === 'EMPLOYEE' ? 5000 : false,
+    refetchOnWindowFocus: true,
   });
 
   const { data: myTeams } = useQuery({
@@ -312,8 +314,9 @@ export default function Dashboard() {
   const myTotalWeightage = mySheet?.sheet?.totalWeightage || 0;
   const cycleWindow = mySheet?.cycle?.window;
 
-  const openCycleLabel = metrics?.cycle
-    ? `${metrics.cycle.name} · ${metrics.cycle.open_date} to ${metrics.cycle.close_date}`
+  const cycleForHeader = metrics?.cycle || mySheet?.cycle || null;
+  const openCycleLabel = cycleForHeader
+    ? `${cycleForHeader.name} · ${cycleForHeader.open_date} to ${cycleForHeader.close_date}`
     : 'No active cycle';
 
   return (
@@ -355,9 +358,9 @@ export default function Dashboard() {
                 gap: 6,
                 padding: '6px 10px',
                 borderRadius: 999,
-                background: metrics?.cycle?.status === 'OPEN' ? '#ecfdf5' : '#f8fafc',
+                background: cycleForHeader?.status === 'OPEN' ? '#ecfdf5' : '#f8fafc',
                 border: '1px solid rgba(148, 163, 184, 0.18)',
-                color: metrics?.cycle?.status === 'OPEN' ? PALETTE.green : '#64748b',
+                color: cycleForHeader?.status === 'OPEN' ? PALETTE.green : '#64748b',
                 fontSize: 12,
                 fontWeight: 800,
                 letterSpacing: '0.06em',
@@ -365,8 +368,8 @@ export default function Dashboard() {
                 whiteSpace: 'nowrap',
               }}
             >
-              <span style={{ width: 8, height: 8, borderRadius: 999, background: metrics?.cycle?.status === 'OPEN' ? PALETTE.green : '#94a3b8' }} />
-              {metrics?.cycle?.status || 'No cycle'}
+              <span style={{ width: 8, height: 8, borderRadius: 999, background: cycleForHeader?.status === 'OPEN' ? PALETTE.green : '#94a3b8' }} />
+              {cycleForHeader?.status || 'No cycle'}
             </span>
           </div>
         </div>
@@ -463,14 +466,14 @@ export default function Dashboard() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                       <div>
                         <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{risk.goal_title}</div>
-                        <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>{risk.employee_name} · {risk.department} · {risk.thrust_area}</div>
+                        <div style={{ marginTop: 4, fontSize: 12, color: '#64748b' }}>{risk.employee_name} Â· {risk.department} Â· {risk.thrust_area}</div>
                       </div>
                       <div style={{ fontSize: 12, fontWeight: 800, color: risk.severity === 'HIGH' ? '#dc2626' : '#d97706' }}>
                         {risk.riskScore} / 100
                       </div>
                     </div>
                     <div style={{ marginTop: 8, fontSize: 12, color: '#475569', lineHeight: 1.6 }}>
-                      {(risk.reasons || []).slice(0, 2).join(' · ')}
+                      {(risk.reasons || []).slice(0, 2).join(' Â· ')}
                     </div>
                   </div>
                 ))}
@@ -487,7 +490,7 @@ export default function Dashboard() {
           >
             <ShellCard
               title="My Goal Sheet"
-              subtitle={`Status: ${mySheetStatus.replace(/_/g, ' ')} · ${myGoals.length} goals · ${myTotalWeightage}% allocated`}
+              subtitle={`Status: ${mySheetStatus.replace(/_/g, ' ')} Â· ${myGoals.length} goals Â· ${myTotalWeightage}% allocated`}
               extra={<GoalStatusPill status={mySheetStatus} />}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -894,7 +897,7 @@ export default function Dashboard() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>{g.title}</div>
                     <div style={{ fontSize: 13, color: '#64748b', marginTop: 5 }}>
-                      {g.thrust_area} · Target: {g.target_value}
+                      {g.thrust_area} Â· Target: {g.target_value}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
@@ -1018,4 +1021,6 @@ function DashboardSkeleton() {
     </div>
   );
 }
+
+
 
