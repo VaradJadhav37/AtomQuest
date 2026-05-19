@@ -1132,6 +1132,20 @@ Access:   All systems, all users, all reports
 
 **Universal Demo Password:** `Demo@1234`
 
+### Live Demo Links
+
+| Link | URL |
+|------|-----|
+| **Working Application** | https://atom-quest-kappa.vercel.app/ |
+| **Backend API** | https://dashboard.render.com/web/srv-d850c599rddc739ve3c0 |
+| **Video Demo** | https://1drv.ms/v/c/dfe5aae8df202ec4/IQBr9IQnuD9fSKCKoGRjqONjAY-41HzvzIHQofUmfgY2gsA?e=Cd71AS |
+
+### ⚠️ Important Cautions
+
+1. **Backend Deployment (Render):** The backend is deployed on Render's free tier, which may be inactive due to inactivity. It may take some time to reactivate when you first access the application. Please be patient.
+
+2. **Demo Data Reset:** For demo purposes, the admin portal includes a "Reset Data" button that resets all demo data to its seed state. After clicking reset, **please wait for 2 minutes** and then log in again to ensure the data is fully restored.
+
 ### Pre-Seeded Demo Data
 
 #### Cycles
